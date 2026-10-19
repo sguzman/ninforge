@@ -27,3 +27,7 @@ Synthetic HFS0 entries and a nested XCI root partition are generated in memory. 
 ## Switch control.nacp
 
 Tests synthesize only unencrypted 0x4000-byte control metadata with fictional homebrew strings. Parsing fails closed on missing titles, invalid UTF-8, truncation and compressed or unknown title-table encodings. No keys or real title assets are needed.
+
+## Switch NSO and cheat ID
+
+A synthetic NSO0 header verifies that the Atmosphère cheat ID uses the first eight bytes of the module build ID. A zero-filled ID reports explicit unavailability.

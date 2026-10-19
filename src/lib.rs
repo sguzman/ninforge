@@ -21,6 +21,7 @@ pub enum Format {
     SwitchNsp,
     SwitchHfs0,
     SwitchNacp,
+    SwitchNso,
     SwitchXci,
     SwitchNca,
     Nintendo3dsCartridge,
@@ -41,6 +42,7 @@ impl Format {
             Self::SwitchNsp => "Switch NSP/PFS0",
             Self::SwitchHfs0 => "Switch HFS0",
             Self::SwitchNacp => "Switch control.nacp",
+            Self::SwitchNso => "Switch NSO executable",
             Self::SwitchXci => "Switch XCI",
             Self::SwitchNca => "Switch NCA (readable header)",
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
@@ -61,6 +63,7 @@ impl Format {
             Self::SwitchNsp
             | Self::SwitchHfs0
             | Self::SwitchNacp
+            | Self::SwitchNso
             | Self::SwitchXci
             | Self::SwitchNca => "switch",
             Self::Nintendo3dsCartridge => "3ds",
@@ -128,6 +131,17 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
                 "mapper",
                 (u16::from(head[7] & 0xf0)) | u16::from(head[6] >> 4),
             );
+        }
+    } else if head.starts_with(b"NSO0") && head.len() >= 0x100 {
+        report.format = Format::SwitchNso;
+        let id = &head[0x40..0x60];
+        if id.iter().any(|byte| *byte != 0) {
+            let full = id.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+            let short = id[..8].iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+            report.add("module_build_id", full);
+            report.add("atmosphere_cheat_build_id", short);
+        } else {
+            report.add("build_id_available", false);
         }
     } else if head.starts_with(b"HFS0") {
         report.format = Format::SwitchHfs0;
@@ -453,6 +467,26 @@ mod tests {
             report(bytes).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn nso_reports_first_eight_bytes_as_cheat_id() {
+        let mut bytes = vec![0u8; 0x100];
+        bytes[0..4].copy_from_slice(b"NSO0");
+        bytes[0x40..0x48].copy_from_slice(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
+        let result = report(bytes).unwrap();
+        assert_eq!(result.format, Format::SwitchNso);
+        assert!(result.metadata.contains(&("atmosphere_cheat_build_id".into(), "123456789ABCDEF0".into())));
+        assert!(result.metadata.iter().any(|(key, value)| key == "module_build_id" && value.len() == 64));
+    }
+
+    #[test]
+    fn nso_without_build_id_does_not_invent_one() {
+        let mut bytes = vec![0u8; 0x100];
+        bytes[..4].copy_from_slice(b"NSO0");
+        let result = report(bytes).unwrap();
+        assert!(result.metadata.contains(&("build_id_available".into(), "false".into())));
+        assert!(!result.metadata.iter().any(|(key, _)| key == "atmosphere_cheat_build_id"));
     }
 
     #[test]
