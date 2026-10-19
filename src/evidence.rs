@@ -34,7 +34,9 @@ impl PackageEvidence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeaderEvidence {
     NotChecked,
+    NoReferencedContent,
     Unavailable,
+    NotComparable,
     AllConsistent,
     Conflict,
     MixedOrIncomplete,
@@ -44,7 +46,9 @@ impl HeaderEvidence {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NotChecked => "not_checked",
+            Self::NoReferencedContent => "no_referenced_content",
             Self::Unavailable => "unavailable",
+            Self::NotComparable => "not_comparable",
             Self::AllConsistent => "all_readable_headers_consistent",
             Self::Conflict => "header_conflict",
             Self::MixedOrIncomplete => "mixed_or_incomplete",
@@ -132,6 +136,9 @@ fn header_evidence(audit: Option<&PackageAudit>) -> HeaderEvidence {
     if !audit.headers_requested {
         return HeaderEvidence::NotChecked;
     }
+    if audit.referenced.is_empty() {
+        return HeaderEvidence::NoReferencedContent;
+    }
     if audit.header_count(HeaderStatus::TypeMismatch) > 0
         || audit.header_count(HeaderStatus::SizeMismatch) > 0
         || audit.header_count(HeaderStatus::Malformed) > 0
@@ -139,10 +146,12 @@ fn header_evidence(audit: Option<&PackageAudit>) -> HeaderEvidence {
         return HeaderEvidence::Conflict;
     }
     let consistent = audit.header_count(HeaderStatus::Consistent);
-    if !audit.referenced.is_empty() && consistent == audit.referenced.len() {
+    if consistent == audit.referenced.len() {
         HeaderEvidence::AllConsistent
-    } else if consistent == 0 {
+    } else if audit.header_count(HeaderStatus::Unavailable) == audit.referenced.len() {
         HeaderEvidence::Unavailable
+    } else if audit.header_count(HeaderStatus::NotComparable) == audit.referenced.len() {
+        HeaderEvidence::NotComparable
     } else {
         HeaderEvidence::MixedOrIncomplete
     }
@@ -281,7 +290,8 @@ mod tests {
         assert_eq!(summary.package,PackageEvidence::Incomplete);
         assert_eq!(summary.headers,HeaderEvidence::Unavailable);
         let empty = audit(Vec::new(),true,true);
-        assert_eq!(summarize(Some(empty),false).package,PackageEvidence::NoReferencedContent);
+        assert_eq!(summarize(Some(empty.clone()),false).package,PackageEvidence::NoReferencedContent);
+        assert_eq!(summarize(Some(empty),false).headers,HeaderEvidence::NoReferencedContent);
     }
 
     #[test]
@@ -306,6 +316,19 @@ mod tests {
         assert_eq!(clash.release,ReleaseEvidence::DuplicateConflictingCnmt);
         assert_eq!(clash.cheat_target,CheatTarget::ConflictingRelease);
         assert!(!clash.automatic_cheat_match_allowed);
+    }
+
+    #[test]
+    fn cannot_read_and_cannot_compare_are_distinct_header_states() {
+        let non_comparable = audit(vec![entry(
+            MatchStatus::Present, HashStatus::NotChecked, HeaderStatus::NotComparable
+        )], false, true);
+        assert_eq!(summarize(Some(non_comparable), false).headers, HeaderEvidence::NotComparable);
+        let mixed = audit(vec![
+            entry(MatchStatus::Present, HashStatus::NotChecked, HeaderStatus::Unavailable),
+            entry(MatchStatus::Present, HashStatus::NotChecked, HeaderStatus::NotComparable),
+        ], false, true);
+        assert_eq!(summarize(Some(mixed), false).headers, HeaderEvidence::MixedOrIncomplete);
     }
 
     #[test]
