@@ -196,3 +196,81 @@ fn cli_auto_rejects_explicit_sidecar_flags_and_unexpected_flags() {
         .success());
     assert!(!fixture.audit_dir(&["--bogus"]).status.success());
 }
+
+fn make_hfs0(items: &[(&str, &[u8])]) -> Vec<u8> {
+    let names: usize = items.iter().map(|(name, _)| name.len() + 1).sum();
+    let mut out = b"HFS0".to_vec();
+    out.extend((items.len() as u32).to_le_bytes());
+    out.extend((names as u32).to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    let mut position = 0u64;
+    let mut name_position = 0u32;
+    for (name, bytes) in items {
+        out.extend(position.to_le_bytes());
+        out.extend((bytes.len() as u64).to_le_bytes());
+        out.extend(name_position.to_le_bytes());
+        out.extend(0u32.to_le_bytes());
+        out.extend([0u8; 40]);
+        position += bytes.len() as u64;
+        name_position += name.len() as u32 + 1;
+    }
+    for (name, _) in items {
+        out.extend(name.as_bytes());
+        out.push(0);
+    }
+    for (_, bytes) in items {
+        out.extend(*bytes);
+    }
+    out
+}
+
+fn make_xci(nca_payload: &[u8]) -> Vec<u8> {
+    let secure = make_hfs0(&[(NAME, nca_payload)]);
+    let root = make_hfs0(&[("secure", &secure)]);
+    let mut xci = vec![0u8; 0x200];
+    xci[0x100..0x104].copy_from_slice(b"HEAD");
+    xci[0x130..0x138].copy_from_slice(&0x200u64.to_le_bytes());
+    xci[0x138..0x140].copy_from_slice(&0x50u64.to_le_bytes());
+    xci.extend(root);
+    xci
+}
+
+#[test]
+fn cli_xci_secure_content_matches_supplied_cnmt_hash() {
+    let fixture = Fixture::new(b"abc", b"abc");
+    let xci = fixture.directory.join("synthetic.xci");
+    fs::write(&xci, make_xci(b"abc")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ninforge"))
+        .arg("package")
+        .arg("audit")
+        .arg(&xci)
+        .arg(&fixture.cnmt)
+        .args(["--hash", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""package_format":"Switch XCI""#));
+    assert!(json.contains(r#""hash_status":"matched""#));
+    assert!(json.contains(r#""package_filename":"root/secure/11111111111111111111111111111111.nca""#));
+}
+
+#[test]
+fn cli_xci_audit_dir_discovers_external_cnmt() {
+    let fixture = Fixture::new(b"abc", b"abc");
+    let xci = fixture.directory.join("synthetic.xci");
+    fs::write(&xci, make_xci(b"abc")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ninforge"))
+        .arg("package")
+        .arg("audit-dir")
+        .arg(&xci)
+        .arg(&fixture.directory)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""package_format":"Switch XCI""#));
+    assert!(json.contains(r#""hash_status":"not_checked""#));
+    assert!(json.contains(r#""present":1"#));
+}
