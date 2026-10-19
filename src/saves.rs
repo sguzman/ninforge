@@ -37,14 +37,20 @@ pub fn format_hint(path: &Path) -> Option<&'static str> {
 pub fn inventory(root: &Path) -> io::Result<Vec<Candidate>> {
     let meta = fs::symlink_metadata(root)?;
     if !meta.file_type().is_dir() {
-        return Err(io::Error::new(ErrorKind::InvalidInput, "save root must be a real directory"));
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "save root must be a real directory",
+        ));
     }
     let mut stack = vec![(root.to_path_buf(), 0usize)];
     let mut visited = 0usize;
     let mut found = Vec::new();
     while let Some((path, depth)) = stack.pop() {
         if depth > MAX_DEPTH {
-            return Err(io::Error::new(ErrorKind::InvalidData, "save directory nesting exceeds limit"));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "save directory nesting exceeds limit",
+            ));
         }
         let mut children = fs::read_dir(&path)?
             .map(|item| item.map(|entry| entry.path()))
@@ -53,7 +59,10 @@ pub fn inventory(root: &Path) -> io::Result<Vec<Candidate>> {
         for child in children.into_iter().rev() {
             visited += 1;
             if visited > MAX_VISITED {
-                return Err(io::Error::new(ErrorKind::InvalidData, "save directory inventory exceeds file limit"));
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "save directory inventory exceeds file limit",
+                ));
             }
             let metadata = fs::symlink_metadata(&child)?;
             let kind = metadata.file_type();
@@ -64,7 +73,11 @@ pub fn inventory(root: &Path) -> io::Result<Vec<Candidate>> {
                 stack.push((child, depth + 1));
             } else if kind.is_file() {
                 if let Some(hint) = format_hint(&child) {
-                    found.push(Candidate { path: child, size: metadata.len(), hint });
+                    found.push(Candidate {
+                        path: child,
+                        size: metadata.len(),
+                        hint,
+                    });
                 }
             }
         }
@@ -85,33 +98,59 @@ pub fn inventory(root: &Path) -> io::Result<Vec<Candidate>> {
 pub fn backup(source: &Path, destination: &Path) -> io::Result<u64> {
     let source_metadata = fs::symlink_metadata(source)?;
     if !source_metadata.file_type().is_file() {
-        return Err(io::Error::new(ErrorKind::InvalidInput, "source must be a regular, non-symlink file"));
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "source must be a regular, non-symlink file",
+        ));
     }
     let mut input = OpenOptions::new().read(true).open(source)?;
     if !input.metadata()?.file_type().is_file() {
-        return Err(io::Error::new(ErrorKind::InvalidInput, "source changed type during open"));
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "source changed type during open",
+        ));
     }
-    let parent = destination.parent().filter(|p| !p.as_os_str().is_empty())
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH)
-        .map_err(io::Error::other)?.as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_nanos();
     let mut staged = None;
     for attempt in 0..32 {
-        let temporary = parent.join(format!(".ninforge-copy-{}-{nanos}-{attempt}.tmp", std::process::id()));
-        match OpenOptions::new().write(true).create_new(true).open(&temporary) {
-            Ok(output) => { staged = Some((temporary, output)); break; }
+        let temporary = parent.join(format!(
+            ".ninforge-copy-{}-{nanos}-{attempt}.tmp",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(output) => {
+                staged = Some((temporary, output));
+                break;
+            }
             Err(err) if err.kind() == ErrorKind::AlreadyExists => continue,
             Err(err) => return Err(err),
         }
     }
-    let (temporary, mut output) = staged.ok_or_else(|| io::Error::new(
-        ErrorKind::AlreadyExists, "could not reserve a unique backup temporary file",
-    ))?;
+    let (temporary, mut output) = staged.ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::AlreadyExists,
+            "could not reserve a unique backup temporary file",
+        )
+    })?;
 
     let copied = (|| -> io::Result<u64> {
         let copied = io::copy(&mut input, &mut output)?;
         if copied != source_metadata.len() || input.metadata()?.len() != source_metadata.len() {
-            return Err(io::Error::new(ErrorKind::InvalidData, "source changed size during backup"));
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "source changed size during backup",
+            ));
         }
         output.flush()?;
         output.sync_all()?;
@@ -124,8 +163,14 @@ pub fn backup(source: &Path, destination: &Path) -> io::Result<u64> {
     });
     let cleanup = fs::remove_file(&temporary);
     match result {
-        Ok(count) => { cleanup?; Ok(count) }
-        Err(err) => { let _ = cleanup; Err(err) }
+        Ok(count) => {
+            cleanup?;
+            Ok(count)
+        }
+        Err(err) => {
+            let _ = cleanup;
+            Err(err)
+        }
     }
 }
 
@@ -139,14 +184,22 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-            let path = std::env::temp_dir().join(format!("ninforge-saves-{}-{nanos}-{id}", std::process::id()));
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "ninforge-saves-{}-{nanos}-{id}",
+                std::process::id()
+            ));
             fs::create_dir(&path).unwrap();
             Self(path)
         }
     }
     impl Drop for Fixture {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -169,7 +222,10 @@ mod tests {
         fs::write(&src, b"synthetic save bytes").unwrap();
         assert_eq!(backup(&src, &dest).unwrap(), 20);
         assert_eq!(fs::read(&dest).unwrap(), b"synthetic save bytes");
-        assert_eq!(backup(&src, &dest).unwrap_err().kind(), ErrorKind::AlreadyExists);
+        assert_eq!(
+            backup(&src, &dest).unwrap_err().kind(),
+            ErrorKind::AlreadyExists
+        );
         assert_eq!(fs::read(&dest).unwrap(), b"synthetic save bytes");
         assert_eq!(inventory(&temp.0).unwrap().len(), 2);
     }
@@ -177,7 +233,12 @@ mod tests {
     #[test]
     fn refuses_directory_as_save_source() {
         let temp = Fixture::new();
-        assert_eq!(backup(&temp.0, &temp.0.join("output.sav")).unwrap_err().kind(), ErrorKind::InvalidInput);
+        assert_eq!(
+            backup(&temp.0, &temp.0.join("output.sav"))
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidInput
+        );
     }
 
     #[cfg(unix)]
@@ -188,6 +249,11 @@ mod tests {
         fs::write(temp.0.join("real.sav"), b"abc").unwrap();
         symlink(temp.0.join("real.sav"), temp.0.join("link.sav")).unwrap();
         assert_eq!(inventory(&temp.0).unwrap().len(), 1);
-        assert_eq!(backup(&temp.0.join("link.sav"), &temp.0.join("out.sav")).unwrap_err().kind(), ErrorKind::InvalidInput);
+        assert_eq!(
+            backup(&temp.0.join("link.sav"), &temp.0.join("out.sav"))
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidInput
+        );
     }
 }

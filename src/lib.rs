@@ -114,12 +114,22 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         if !nes2 {
             report.add("prg_rom_kib", u32::from(head[4]) * 16);
             report.add("chr_rom_kib", u32::from(head[5]) * 8);
-            report.add("mapper", (u16::from(head[7] & 0xf0)) | u16::from(head[6] >> 4));
+            report.add(
+                "mapper",
+                (u16::from(head[7] & 0xf0)) | u16::from(head[6] >> 4),
+            );
         }
     } else if is_game_boy(&head) {
         let cgb = head[0x143] == 0x80 || head[0x143] == 0xc0;
-        report.format = if cgb { Format::GameBoyColor } else { Format::GameBoy };
-        report.add("title", ascii_field(&head[0x134..if cgb { 0x13f } else { 0x144 }]));
+        report.format = if cgb {
+            Format::GameBoyColor
+        } else {
+            Format::GameBoy
+        };
+        report.add(
+            "title",
+            ascii_field(&head[0x134..if cgb { 0x13f } else { 0x144 }]),
+        );
         report.add("cartridge_type", format!("0x{:02x}", head[0x147]));
         report.add("rom_size_code", format!("0x{:02x}", head[0x148]));
     } else if is_gba(&head) {
@@ -140,7 +150,11 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         let files = nds::filesystem(input, &head, bytes)?;
         report.add("nitrofs_file_count", files.len());
         report.entries.extend(files);
-    } else if head.len() >= 4 && (&head[0..4] == b"\x80\x37\x12\x40" || &head[0..4] == b"\x37\x80\x40\x12" || &head[0..4] == b"\x40\x12\x37\x80") {
+    } else if head.len() >= 4
+        && (&head[0..4] == b"\x80\x37\x12\x40"
+            || &head[0..4] == b"\x37\x80\x40\x12"
+            || &head[0..4] == b"\x40\x12\x37\x80")
+    {
         report.format = Format::Nintendo64;
         let order = match &head[0..4] {
             b"\x80\x37\x12\x40" => "big-endian (.z64)",
@@ -154,12 +168,16 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
     } else if head.len() >= 0x20 && &head[0x1c..0x20] == b"\xc2\x33\x9f\x3d" && disc_id_ok(&head) {
         report.format = Format::GameCube;
         report.add("game_id", ascii_field(&head[0..6]));
-        if head.len() >= 0x60 { report.add("title", ascii_field(&head[0x20..0x60])); }
+        if head.len() >= 0x60 {
+            report.add("title", ascii_field(&head[0x20..0x60]));
+        }
     } else if head.len() >= 0x104 && &head[0x100..0x104] == b"HEAD" {
         report.format = Format::SwitchXci;
     } else if head.len() >= 0x104 && &head[0x100..0x104] == b"NCSD" {
         report.format = Format::Nintendo3dsCartridge;
-    } else if head.len() >= 0x204 && (&head[0x200..0x204] == b"NCA2" || &head[0x200..0x204] == b"NCA3") {
+    } else if head.len() >= 0x204
+        && (&head[0x200..0x204] == b"NCA2" || &head[0x200..0x204] == b"NCA3")
+    {
         report.format = Format::SwitchNca;
     }
     Ok(report)
@@ -187,20 +205,27 @@ pub fn extract_entry<R: Read + Seek, W: Write>(
 }
 
 fn parse_pfs0<R: Read + Seek>(reader: &mut R, length: u64) -> io::Result<Vec<Entry>> {
-    if length < 16 { return Err(invalid("PFS0 header is truncated")); }
+    if length < 16 {
+        return Err(invalid("PFS0 header is truncated"));
+    }
     reader.seek(SeekFrom::Start(0))?;
     let mut header = [0u8; 16];
     reader.read_exact(&mut header)?;
     let count = le_u32(&header[4..8]);
     let string_size = le_u32(&header[8..12]);
     if count > MAX_PFS0_ENTRIES || string_size > MAX_PFS0_STRINGS {
-        return Err(invalid("PFS0 entry count or string table exceeds safety limit"));
+        return Err(invalid(
+            "PFS0 entry count or string table exceeds safety limit",
+        ));
     }
     let table_bytes = u64::from(count) * 24;
-    let data_start = 16u64.checked_add(table_bytes)
+    let data_start = 16u64
+        .checked_add(table_bytes)
         .and_then(|n| n.checked_add(u64::from(string_size)))
         .ok_or_else(|| invalid("PFS0 table size overflow"))?;
-    if data_start > length { return Err(invalid("PFS0 tables extend beyond input")); }
+    if data_start > length {
+        return Err(invalid("PFS0 tables extend beyond input"));
+    }
     let mut table = vec![0u8; table_bytes as usize];
     reader.read_exact(&mut table)?;
     let mut strings = vec![0u8; string_size as usize];
@@ -211,24 +236,31 @@ fn parse_pfs0<R: Read + Seek>(reader: &mut R, length: u64) -> io::Result<Vec<Ent
         let relative = le_u64(&chunk[0..8]);
         let size = le_u64(&chunk[8..16]);
         let name_offset = le_u32(&chunk[16..20]) as usize;
-        let name_bytes = strings.get(name_offset..)
+        let name_bytes = strings
+            .get(name_offset..)
             .and_then(|tail| tail.split(|b| *b == 0).next())
             .filter(|name| !name.is_empty() && name_offset + name.len() < strings.len())
             .ok_or_else(|| invalid("PFS0 filename missing or not NUL-terminated"))?;
         let name = std::str::from_utf8(name_bytes)
-            .map_err(|_| invalid("PFS0 filename is not UTF-8"))?.to_string();
+            .map_err(|_| invalid("PFS0 filename is not UTF-8"))?
+            .to_string();
         if !names.insert(name.clone()) {
             return Err(invalid("PFS0 has duplicate filenames"));
         }
-        let offset = data_start.checked_add(relative)
+        let offset = data_start
+            .checked_add(relative)
             .ok_or_else(|| invalid("PFS0 file offset overflow"))?;
-        let end = offset.checked_add(size)
+        let end = offset
+            .checked_add(size)
             .ok_or_else(|| invalid("PFS0 entry length overflow"))?;
-        if end > length { return Err(invalid("PFS0 entry extends beyond input")); }
+        if end > length {
+            return Err(invalid("PFS0 entry extends beyond input"));
+        }
         entries.push(Entry { name, offset, size });
     }
     // Reject overlapping nonempty spans even when both happen to be within bounds.
-    let mut spans: Vec<(u64, u64)> = entries.iter()
+    let mut spans: Vec<(u64, u64)> = entries
+        .iter()
         .filter(|entry| entry.size != 0)
         .map(|entry| (entry.offset, entry.offset + entry.size))
         .collect();
@@ -245,7 +277,9 @@ fn le_u32(bytes: &[u8]) -> u32 {
 fn le_u64(bytes: &[u8]) -> u64 {
     u64::from_le_bytes(bytes.try_into().expect("8-byte slice"))
 }
-fn invalid(message: &str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, message) }
+fn invalid(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
+}
 
 fn ascii_field(bytes: &[u8]) -> String {
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
@@ -255,24 +289,35 @@ fn disc_id_ok(head: &[u8]) -> bool {
     head[0..6].iter().all(|byte| byte.is_ascii_alphanumeric())
 }
 fn is_gba(head: &[u8]) -> bool {
-    if head.len() < 0xbe || head[0xb2] != 0x96 { return false; }
-    if !head[0xac..0xb0].iter().all(|b| b.is_ascii_alphanumeric()) { return false; }
-    let checksum = head[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte)).wrapping_sub(0x19);
+    if head.len() < 0xbe || head[0xb2] != 0x96 {
+        return false;
+    }
+    if !head[0xac..0xb0].iter().all(|b| b.is_ascii_alphanumeric()) {
+        return false;
+    }
+    let checksum = head[0xa0..0xbd]
+        .iter()
+        .fold(0u8, |sum, byte| sum.wrapping_sub(*byte))
+        .wrapping_sub(0x19);
     checksum == head[0xbd]
 }
 fn is_nds(head: &[u8]) -> bool {
-    head.len() >= 0x160 && head[0x15c..0x15e] == [0x56, 0xcf]
+    head.len() >= 0x160
+        && head[0x15c..0x15e] == [0x56, 0xcf]
         && head[12..16].iter().all(|b| b.is_ascii_alphanumeric())
 }
 const GB_LOGO: [u8; 48] = [
-    0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83,
-    0x00, 0x0c, 0x00, 0x0d, 0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e,
-    0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99, 0xbb, 0xbb, 0x67, 0x63,
-    0x6e, 0x0e, 0xec, 0xcc, 0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e,
+    0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d,
+    0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e, 0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99,
+    0xbb, 0xbb, 0x67, 0x63, 0x6e, 0x0e, 0xec, 0xcc, 0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e,
 ];
 fn is_game_boy(head: &[u8]) -> bool {
-    if head.len() < 0x150 || &head[0x104..0x134] != GB_LOGO.as_slice() { return false; }
-    let checksum = head[0x134..0x14d].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+    if head.len() < 0x150 || &head[0x104..0x134] != GB_LOGO.as_slice() {
+        return false;
+    }
+    let checksum = head[0x134..0x14d]
+        .iter()
+        .fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
     checksum == head[0x14d]
 }
 
@@ -281,7 +326,9 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    fn report(bytes: Vec<u8>) -> io::Result<Report> { inspect(&mut Cursor::new(bytes)) }
+    fn report(bytes: Vec<u8>) -> io::Result<Report> {
+        inspect(&mut Cursor::new(bytes))
+    }
 
     fn synthetic_pfs0(name: &str, payload: &[u8]) -> Vec<u8> {
         let mut bytes = b"PFS0".to_vec();
@@ -317,7 +364,10 @@ mod tests {
     fn pfs0_rejects_truncated_entry() {
         let mut bytes = synthetic_pfs0("a", b"ok");
         bytes.pop();
-        assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            report(bytes).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -326,9 +376,11 @@ mod tests {
         bytes.extend(u32::MAX.to_le_bytes());
         bytes.extend(0u32.to_le_bytes());
         bytes.extend(0u32.to_le_bytes());
-        assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            report(bytes).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
-
 
     #[test]
     fn pfs0_rejects_duplicate_names_and_overlap() {
@@ -344,7 +396,10 @@ mod tests {
             raw.extend(0u32.to_le_bytes());
         }
         raw.extend(b"a\0b\0xy");
-        assert_eq!(report(raw.clone()).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            report(raw.clone()).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
         raw[16 + 24 + 16..16 + 24 + 20].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(report(raw).unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
@@ -355,7 +410,10 @@ mod tests {
         let mut bytes = vec![0; 0xbe];
         bytes[0xac..0xb0].copy_from_slice(b"ABCD");
         bytes[0xb2] = 0x96;
-        let complement = bytes[0xa0..0xbd].iter().fold(0u8, |sum, b| sum.wrapping_sub(*b)).wrapping_sub(0x19);
+        let complement = bytes[0xa0..0xbd]
+            .iter()
+            .fold(0u8, |sum, b| sum.wrapping_sub(*b))
+            .wrapping_sub(0x19);
         assert_eq!(complement, 0x47);
         bytes[0xbd] = complement;
         assert_eq!(report(bytes).unwrap().format, Format::GameBoyAdvance);
@@ -373,7 +431,10 @@ mod tests {
         assert_eq!(r.entries[0].name, "arm9.bin");
         assert_eq!(r.entries[0].size, 0x40);
         bytes.truncate(0x230);
-        assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            report(bytes).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -383,7 +444,9 @@ mod tests {
         bytes.extend([0; 8]);
         let result = report(bytes).unwrap();
         assert_eq!(result.format, Format::Nes);
-        assert!(result.metadata.contains(&("prg_rom_kib".into(), "32".into())));
+        assert!(result
+            .metadata
+            .contains(&("prg_rom_kib".into(), "32".into())));
     }
 
     #[test]
@@ -392,7 +455,10 @@ mod tests {
         bytes[0xa0..0xa4].copy_from_slice(b"DEMO");
         bytes[0xac..0xb0].copy_from_slice(b"ABCD");
         bytes[0xb2] = 0x96;
-        bytes[0xbd] = bytes[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte)).wrapping_sub(0x19);
+        bytes[0xbd] = bytes[0xa0..0xbd]
+            .iter()
+            .fold(0u8, |sum, byte| sum.wrapping_sub(*byte))
+            .wrapping_sub(0x19);
         assert_eq!(report(bytes).unwrap().format, Format::GameBoyAdvance);
     }
 
@@ -402,7 +468,9 @@ mod tests {
         bytes[0x104..0x134].copy_from_slice(&GB_LOGO);
         bytes[0x134..0x138].copy_from_slice(b"DEMO");
         bytes[0x143] = 0x80;
-        bytes[0x14d] = bytes[0x134..0x14d].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+        bytes[0x14d] = bytes[0x134..0x14d]
+            .iter()
+            .fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
         assert_eq!(report(bytes).unwrap().format, Format::GameBoyColor);
     }
 

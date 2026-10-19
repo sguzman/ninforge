@@ -1,8 +1,8 @@
 //! Nintendo DS header-defined regions. Section names are synthetic, not ROM paths.
 use crate::Entry;
 use std::collections::HashSet;
-use std::io::{Read, Seek, SeekFrom};
 use std::io::{self, ErrorKind};
+use std::io::{Read, Seek, SeekFrom};
 
 const FIELDS: [(&str, usize, usize); 6] = [
     ("arm9.bin", 0x20, 0x2c),
@@ -16,26 +16,43 @@ const FIELDS: [(&str, usize, usize); 6] = [
 /// Checked bounds for ROM sections; no decryption or filesystem traversal.
 pub(crate) fn sections(header: &[u8], bytes: u64) -> io::Result<Vec<Entry>> {
     if header.len() < 0x60 {
-        return Err(io::Error::new(ErrorKind::InvalidData, "NDS header truncated"));
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "NDS header truncated",
+        ));
     }
     let mut entries = Vec::new();
     for (name, offset_at, size_at) in FIELDS {
-        let offset = u64::from(u32::from_le_bytes(header[offset_at..offset_at + 4].try_into().unwrap()));
-        let size = u64::from(u32::from_le_bytes(header[size_at..size_at + 4].try_into().unwrap()));
-        if offset == 0 && size == 0 { continue; }
-        if offset == 0 || size == 0 || offset.checked_add(size).is_none_or(|end| end > bytes) {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("NDS {name} extends outside the input")));
+        let offset = u64::from(u32::from_le_bytes(
+            header[offset_at..offset_at + 4].try_into().unwrap(),
+        ));
+        let size = u64::from(u32::from_le_bytes(
+            header[size_at..size_at + 4].try_into().unwrap(),
+        ));
+        if offset == 0 && size == 0 {
+            continue;
         }
-        entries.push(Entry { name: name.to_string(), offset, size });
+        if offset == 0 || size == 0 || offset.checked_add(size).is_none_or(|end| end > bytes) {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("NDS {name} extends outside the input"),
+            ));
+        }
+        entries.push(Entry {
+            name: name.to_string(),
+            offset,
+            size,
+        });
     }
     Ok(entries)
 }
 
-
 /// Return checked NitroFS files from a DS ROM's FNT/FAT. The generated names
 /// are not host paths, and are deliberately namespaced under "nitrofs/".
 pub(crate) fn filesystem<R: Read + Seek>(
-    input: &mut R, header: &[u8], length: u64,
+    input: &mut R,
+    header: &[u8],
+    length: u64,
 ) -> io::Result<Vec<Entry>> {
     fn u32_at(data: &[u8], start: usize) -> u32 {
         u32::from_le_bytes(data[start..start + 4].try_into().unwrap())
@@ -52,18 +69,31 @@ pub(crate) fn filesystem<R: Read + Seek>(
     fn error(message: &'static str) -> io::Error {
         io::Error::new(ErrorKind::InvalidData, message)
     }
-    if header.len() < 0x50 { return Err(error("DS header too short")); }
+    if header.len() < 0x50 {
+        return Err(error("DS header too short"));
+    }
     let fnt_offset = u64::from(u32_at(header, 0x40));
     let fnt_size = u64::from(u32_at(header, 0x44));
     let fat_offset = u64::from(u32_at(header, 0x48));
     let fat_size = u64::from(u32_at(header, 0x4c));
-    if [fnt_offset, fnt_size, fat_offset, fat_size].iter().all(|n| *n == 0) {
+    if [fnt_offset, fnt_size, fat_offset, fat_size]
+        .iter()
+        .all(|n| *n == 0)
+    {
         return Ok(Vec::new());
     }
-    if fnt_offset == 0 || fat_offset == 0 || !(8..=16 * 1024 * 1024).contains(&fnt_size)
-        || fat_size == 0 || fat_size % 8 != 0 || fat_size > 8 * 1024 * 1024
-        || fnt_offset.checked_add(fnt_size).is_none_or(|end| end > length)
-        || fat_offset.checked_add(fat_size).is_none_or(|end| end > length)
+    if fnt_offset == 0
+        || fat_offset == 0
+        || !(8..=16 * 1024 * 1024).contains(&fnt_size)
+        || fat_size == 0
+        || fat_size % 8 != 0
+        || fat_size > 8 * 1024 * 1024
+        || fnt_offset
+            .checked_add(fnt_size)
+            .is_none_or(|end| end > length)
+        || fat_offset
+            .checked_add(fat_size)
+            .is_none_or(|end| end > length)
         || fat_size / 8 > 100_000
     {
         return Err(error("invalid NitroFS FNT/FAT bounds"));
@@ -80,16 +110,22 @@ pub(crate) fn filesystem<R: Read + Seek>(
     let mut paths = HashSet::new();
     let mut entries = Vec::new();
     while let Some((dir, prefix)) = pending.pop() {
-        if !dirs.insert(dir) { return Err(error("NitroFS directory cycle")); }
+        if !dirs.insert(dir) {
+            return Err(error("NitroFS directory cycle"));
+        }
         let mut pos = u32_at(&fnt, dir * 8) as usize;
         let mut file_id = usize::from(u16_at(&fnt, dir * 8 + 4));
         if pos < dir_count * 8 || pos >= fnt.len() {
             return Err(error("NitroFS subtable offset outside FNT"));
         }
         loop {
-            let tag = *fnt.get(pos).ok_or_else(|| error("unterminated NitroFS directory"))?;
+            let tag = *fnt
+                .get(pos)
+                .ok_or_else(|| error("unterminated NitroFS directory"))?;
             pos += 1;
-            if tag == 0 { break; }
+            if tag == 0 {
+                break;
+            }
             let len = usize::from(tag & 0x7f);
             if len == 0 || pos.checked_add(len).is_none_or(|end| end > fnt.len()) {
                 return Err(error("truncated NitroFS file or directory name"));
@@ -97,8 +133,11 @@ pub(crate) fn filesystem<R: Read + Seek>(
             let name = std::str::from_utf8(&fnt[pos..pos + len])
                 .map_err(|_| error("non-UTF8 NitroFS name"))?;
             pos += len;
-            if name == "." || name == ".."
-                || name.bytes().any(|b| b == b'/' || b == b'\\' || b < 0x20 || b == 0x7f)
+            if name == "."
+                || name == ".."
+                || name
+                    .bytes()
+                    .any(|b| b == b'/' || b == b'\\' || b < 0x20 || b == 0x7f)
             {
                 return Err(error("unsafe NitroFS path component"));
             }
@@ -107,12 +146,18 @@ pub(crate) fn filesystem<R: Read + Seek>(
                 return Err(error("duplicate or overlong NitroFS path"));
             }
             if tag & 0x80 != 0 {
-                if pos + 2 > fnt.len() { return Err(error("truncated NitroFS directory ID")); }
+                if pos + 2 > fnt.len() {
+                    return Err(error("truncated NitroFS directory ID"));
+                }
                 let id = u16_at(&fnt, pos);
                 pos += 2;
-                if id & 0xf000 != 0xf000 { return Err(error("invalid NitroFS directory ID")); }
+                if id & 0xf000 != 0xf000 {
+                    return Err(error("invalid NitroFS directory ID"));
+                }
                 let child = usize::from(id & 0x0fff);
-                if child >= dir_count { return Err(error("missing NitroFS directory")); }
+                if child >= dir_count {
+                    return Err(error("missing NitroFS directory"));
+                }
                 if u16_at(&fnt, child * 8 + 6) != (0xf000 | dir as u16) {
                     return Err(error("incorrect NitroFS parent"));
                 }
@@ -126,12 +171,18 @@ pub(crate) fn filesystem<R: Read + Seek>(
                 if end < start || end > length {
                     return Err(error("NitroFS file outside ROM"));
                 }
-                entries.push(Entry { name: path, offset: start, size: end - start });
+                entries.push(Entry {
+                    name: path,
+                    offset: start,
+                    size: end - start,
+                });
                 file_id += 1;
             }
         }
     }
-    if dirs.len() != dir_count { return Err(error("orphan NitroFS directory")); }
+    if dirs.len() != dir_count {
+        return Err(error("orphan NitroFS directory"));
+    }
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
     Ok(entries)
 }
@@ -172,10 +223,21 @@ mod tests {
         let rom = nitrofs_fixture();
         let mut input = Cursor::new(rom.clone());
         let result = filesystem(&mut input, &rom[..0x160], rom.len() as u64).unwrap();
-        assert_eq!(result, vec![
-            Entry { name: "nitrofs/a.bin".into(), offset: 0x280, size: 2 },
-            Entry { name: "nitrofs/sub/b.bin".into(), offset: 0x284, size: 3 },
-        ]);
+        assert_eq!(
+            result,
+            vec![
+                Entry {
+                    name: "nitrofs/a.bin".into(),
+                    offset: 0x280,
+                    size: 2
+                },
+                Entry {
+                    name: "nitrofs/sub/b.bin".into(),
+                    offset: 0x284,
+                    size: 3
+                },
+            ]
+        );
         let report = crate::inspect(&mut Cursor::new(rom)).unwrap();
         assert_eq!(report.format, crate::Format::NintendoDs);
         assert_eq!(report.entries.len(), 4);
@@ -203,7 +265,14 @@ mod tests {
         header[0x20..0x24].copy_from_slice(&0x200u32.to_le_bytes());
         header[0x2c..0x30].copy_from_slice(&0x40u32.to_le_bytes());
         let entries = sections(&header, 0x300).unwrap();
-        assert_eq!(entries[0], Entry { name: "arm9.bin".into(), offset: 0x200, size: 0x40 });
+        assert_eq!(
+            entries[0],
+            Entry {
+                name: "arm9.bin".into(),
+                offset: 0x200,
+                size: 0x40
+            }
+        );
         assert!(sections(&header, 0x23f).is_err());
         header[0x2c..0x30].copy_from_slice(&0u32.to_le_bytes());
         assert!(sections(&header, 0x300).is_err());
