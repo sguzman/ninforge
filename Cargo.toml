@@ -1,0 +1,21 @@
+[package]
+name = "ninforge"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+authors = ["Ninforge contributors"]
+description = "Read-only Nintendo game file inspection and bounded archive extraction"
+license = "MIT"
+repository = "https://github.com/sguzman/ninforge"
+keywords = ["nintendo", "rom", "nsp", "metadata", "cli"]
+categories = ["command-line-utilities", "parsing"]
+
+[lib]
+name = "ninforge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ninforge"
+path = "src/main.rs"
+
+[dependencies]

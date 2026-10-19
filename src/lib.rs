@@ -1,0 +1,343 @@
+//! Bounded, read-only inspection of Nintendo file formats.
+//!
+//! Detection is based on content signatures and conservative header checks, not
+//! the filename extension. No decryption keys or commercial ROMs are bundled.
+
+use std::fmt;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+
+const HEADER_CAP: usize = 0x400;
+const MAX_PFS0_ENTRIES: u32 = 100_000;
+const MAX_PFS0_STRINGS: u32 = 16 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    SwitchNsp,
+    SwitchXci,
+    SwitchNca,
+    Nintendo3dsCartridge,
+    NintendoDs,
+    Wii,
+    GameCube,
+    GameBoyAdvance,
+    GameBoy,
+    GameBoyColor,
+    Nintendo64,
+    Nes,
+    Unknown,
+}
+
+impl Format {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::SwitchNsp => "Switch NSP/PFS0",
+            Self::SwitchXci => "Switch XCI",
+            Self::SwitchNca => "Switch NCA (readable header)",
+            Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
+            Self::NintendoDs => "Nintendo DS",
+            Self::Wii => "Wii disc",
+            Self::GameCube => "GameCube disc",
+            Self::GameBoyAdvance => "Game Boy Advance",
+            Self::GameBoy => "Game Boy",
+            Self::GameBoyColor => "Game Boy Color",
+            Self::Nintendo64 => "Nintendo 64",
+            Self::Nes => "NES iNES",
+            Self::Unknown => "Unknown",
+        }
+    }
+
+    pub fn console(self) -> &'static str {
+        match self {
+            Self::SwitchNsp | Self::SwitchXci | Self::SwitchNca => "switch",
+            Self::Nintendo3dsCartridge => "3ds",
+            Self::NintendoDs => "ds",
+            Self::Wii => "wii",
+            Self::GameCube => "gamecube",
+            Self::GameBoyAdvance => "gba",
+            Self::GameBoy | Self::GameBoyColor => "gb",
+            Self::Nintendo64 => "n64",
+            Self::Nes => "nes",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    pub name: String,
+    /// Absolute byte offset in the archive.
+    pub offset: u64,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Report {
+    pub format: Format,
+    pub bytes: u64,
+    pub metadata: Vec<(String, String)>,
+    pub entries: Vec<Entry>,
+}
+
+/// Returns a small metadata report without loading the full input into memory.
+/// A successful report for a non-PFS0 format implies recognition, *not* a
+/// cryptographic integrity check or the ability to decrypt its content.
+pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
+    let bytes = input.seek(SeekFrom::End(0))?;
+    input.seek(SeekFrom::Start(0))?;
+    let mut head = vec![0u8; bytes.min(HEADER_CAP as u64) as usize];
+    input.read_exact(&mut head)?;
+    let mut report = Report {
+        format: Format::Unknown,
+        bytes,
+        metadata: Vec::new(),
+        entries: Vec::new(),
+    };
+
+    if head.starts_with(b"PFS0") {
+        report.format = Format::SwitchNsp;
+        report.entries = parse_pfs0(input, bytes)?;
+        report.add("entry_count", report.entries.len());
+    } else if head.starts_with(b"NES\x1a") && head.len() >= 16 {
+        report.format = Format::Nes;
+        let nes2 = head[7] & 0x0c == 0x08;
+        report.add("header", if nes2 { "NES 2.0" } else { "iNES" });
+        if !nes2 {
+            report.add("prg_rom_kib", u32::from(head[4]) * 16);
+            report.add("chr_rom_kib", u32::from(head[5]) * 8);
+            report.add("mapper", (u16::from(head[7] & 0xf0)) | u16::from(head[6] >> 4));
+        }
+    } else if is_game_boy(&head) {
+        let cgb = head[0x143] == 0x80 || head[0x143] == 0xc0;
+        report.format = if cgb { Format::GameBoyColor } else { Format::GameBoy };
+        report.add("title", ascii_field(&head[0x134..if cgb { 0x13f } else { 0x144 }]));
+        report.add("cartridge_type", format!("0x{:02x}", head[0x147]));
+        report.add("rom_size_code", format!("0x{:02x}", head[0x148]));
+    } else if is_gba(&head) {
+        report.format = Format::GameBoyAdvance;
+        report.add("title", ascii_field(&head[0xa0..0xac]));
+        report.add("game_code", ascii_field(&head[0xac..0xb0]));
+        report.add("maker_code", ascii_field(&head[0xb0..0xb2]));
+        report.add("version", head[0xbc]);
+    } else if is_nds(&head) {
+        report.format = Format::NintendoDs;
+        report.add("title", ascii_field(&head[0..12]));
+        report.add("game_code", ascii_field(&head[12..16]));
+        report.add("maker_code", ascii_field(&head[16..18]));
+        report.add("unit_code", head[18]);
+    } else if head.len() >= 4 && (&head[0..4] == b"\x80\x37\x12\x40" || &head[0..4] == b"\x37\x80\x40\x12" || &head[0..4] == b"\x40\x12\x37\x80") {
+        report.format = Format::Nintendo64;
+        let order = match &head[0..4] {
+            b"\x80\x37\x12\x40" => "big-endian (.z64)",
+            b"\x37\x80\x40\x12" => "byte-swapped (.v64)",
+            _ => "little-endian (.n64)",
+        };
+        report.add("byte_order", order);
+    } else if head.len() >= 0x20 && &head[0x18..0x1c] == b"\x5d\x1c\x9e\xa3" && disc_id_ok(&head) {
+        report.format = Format::Wii;
+        report.add("game_id", ascii_field(&head[0..6]));
+    } else if head.len() >= 0x20 && &head[0x1c..0x20] == b"\xc2\x33\x9f\x3d" && disc_id_ok(&head) {
+        report.format = Format::GameCube;
+        report.add("game_id", ascii_field(&head[0..6]));
+        if head.len() >= 0x60 { report.add("title", ascii_field(&head[0x20..0x60])); }
+    } else if head.len() >= 0x104 && &head[0x100..0x104] == b"HEAD" {
+        report.format = Format::SwitchXci;
+    } else if head.len() >= 0x104 && &head[0x100..0x104] == b"NCSD" {
+        report.format = Format::Nintendo3dsCartridge;
+    } else if head.len() >= 0x204 && (&head[0x200..0x204] == b"NCA2" || &head[0x200..0x204] == b"NCA3") {
+        report.format = Format::SwitchNca;
+    }
+    Ok(report)
+}
+
+impl Report {
+    fn add(&mut self, key: &str, value: impl ToString) {
+        self.metadata.push((key.to_string(), value.to_string()));
+    }
+}
+
+/// Parsed PFS0 names are advisory; extraction always requires the caller to
+/// supply an explicit destination and never treats entry names as host paths.
+pub fn extract_entry<R: Read + Seek, W: Write>(
+    archive: &mut R,
+    entry: &Entry,
+    output: &mut W,
+) -> io::Result<u64> {
+    archive.seek(SeekFrom::Start(entry.offset))?;
+    let copied = io::copy(&mut archive.take(entry.size), output)?;
+    if copied != entry.size {
+        return Err(invalid("archive ended during extraction"));
+    }
+    Ok(copied)
+}
+
+fn parse_pfs0<R: Read + Seek>(reader: &mut R, length: u64) -> io::Result<Vec<Entry>> {
+    if length < 16 { return Err(invalid("PFS0 header is truncated")); }
+    reader.seek(SeekFrom::Start(0))?;
+    let mut header = [0u8; 16];
+    reader.read_exact(&mut header)?;
+    let count = le_u32(&header[4..8]);
+    let string_size = le_u32(&header[8..12]);
+    if count > MAX_PFS0_ENTRIES || string_size > MAX_PFS0_STRINGS {
+        return Err(invalid("PFS0 entry count or string table exceeds safety limit"));
+    }
+    let table_bytes = u64::from(count) * 24;
+    let data_start = 16u64.checked_add(table_bytes)
+        .and_then(|n| n.checked_add(u64::from(string_size)))
+        .ok_or_else(|| invalid("PFS0 table size overflow"))?;
+    if data_start > length { return Err(invalid("PFS0 tables extend beyond input")); }
+    let mut table = vec![0u8; table_bytes as usize];
+    reader.read_exact(&mut table)?;
+    let mut strings = vec![0u8; string_size as usize];
+    reader.read_exact(&mut strings)?;
+    let mut entries = Vec::with_capacity(count as usize);
+    for chunk in table.chunks_exact(24) {
+        let relative = le_u64(&chunk[0..8]);
+        let size = le_u64(&chunk[8..16]);
+        let name_offset = le_u32(&chunk[16..20]) as usize;
+        let name_bytes = strings.get(name_offset..)
+            .and_then(|tail| tail.split(|b| *b == 0).next())
+            .filter(|name| !name.is_empty() && name_offset + name.len() < strings.len())
+            .ok_or_else(|| invalid("PFS0 filename missing or not NUL-terminated"))?;
+        let name = std::str::from_utf8(name_bytes)
+            .map_err(|_| invalid("PFS0 filename is not UTF-8"))?.to_string();
+        let offset = data_start.checked_add(relative)
+            .ok_or_else(|| invalid("PFS0 file offset overflow"))?;
+        let end = offset.checked_add(size)
+            .ok_or_else(|| invalid("PFS0 entry length overflow"))?;
+        if end > length { return Err(invalid("PFS0 entry extends beyond input")); }
+        entries.push(Entry { name, offset, size });
+    }
+    Ok(entries)
+}
+
+fn le_u32(bytes: &[u8]) -> u32 {
+    u32::from_le_bytes(bytes.try_into().expect("4-byte slice"))
+}
+fn le_u64(bytes: &[u8]) -> u64 {
+    u64::from_le_bytes(bytes.try_into().expect("8-byte slice"))
+}
+fn invalid(message: &str) -> io::Error { io::Error::new(io::ErrorKind::InvalidData, message) }
+
+fn ascii_field(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).trim().to_string()
+}
+fn disc_id_ok(head: &[u8]) -> bool {
+    head[0..6].iter().all(|byte| byte.is_ascii_alphanumeric())
+}
+fn is_gba(head: &[u8]) -> bool {
+    if head.len() < 0xbe || head[0xb2] != 0x96 { return false; }
+    if !head[0xac..0xb0].iter().all(|b| b.is_ascii_alphanumeric()) { return false; }
+    let checksum = head[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+    checksum == head[0xbd]
+}
+fn is_nds(head: &[u8]) -> bool {
+    head.len() >= 0x160 && head[0x15c..0x15e] == [0x56, 0xcf]
+        && head[12..16].iter().all(|b| b.is_ascii_alphanumeric())
+}
+const GB_LOGO: [u8; 48] = [
+    0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83,
+    0x00, 0x0c, 0x00, 0x0d, 0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e,
+    0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99, 0xbb, 0xbb, 0x67, 0x63,
+    0x6e, 0x0e, 0xec, 0xcc, 0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e,
+];
+fn is_game_boy(head: &[u8]) -> bool {
+    if head.len() < 0x150 || &head[0x104..0x134] != GB_LOGO.as_slice() { return false; }
+    let checksum = head[0x134..0x14d].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+    checksum == head[0x14d]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn report(bytes: Vec<u8>) -> io::Result<Report> { inspect(&mut Cursor::new(bytes)) }
+
+    fn synthetic_pfs0(name: &str, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = b"PFS0".to_vec();
+        bytes.extend(1u32.to_le_bytes());
+        bytes.extend(((name.len() + 1) as u32).to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(0u64.to_le_bytes());
+        bytes.extend((payload.len() as u64).to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(name.as_bytes());
+        bytes.push(0);
+        bytes.extend(payload);
+        bytes
+    }
+
+    #[test]
+    fn pfs0_reads_names_offsets_and_content() {
+        let raw = synthetic_pfs0("example.txt", b"test data");
+        let mut cursor = Cursor::new(raw.clone());
+        let result = inspect(&mut cursor).unwrap();
+        assert_eq!(result.format, Format::SwitchNsp);
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].name, "example.txt");
+        let mut output = Vec::new();
+        let count = extract_entry(&mut cursor, &result.entries[0], &mut output).unwrap();
+        assert_eq!(count, 9);
+        assert_eq!(output, b"test data");
+        assert_eq!(result.entries[0].offset + count, raw.len() as u64);
+    }
+
+    #[test]
+    fn pfs0_rejects_truncated_entry() {
+        let mut bytes = synthetic_pfs0("a", b"ok");
+        bytes.pop();
+        assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn pfs0_rejects_unbounded_count() {
+        let mut bytes = b"PFS0".to_vec();
+        bytes.extend(u32::MAX.to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+        assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn recognizes_nes_header() {
+        let mut bytes = b"NES\x1a".to_vec();
+        bytes.extend([2, 1, 0, 0]);
+        bytes.extend([0; 8]);
+        let result = report(bytes).unwrap();
+        assert_eq!(result.format, Format::Nes);
+        assert!(result.metadata.contains(&("prg_rom_kib".into(), "32".into())));
+    }
+
+    #[test]
+    fn recognizes_synthetic_gba_header() {
+        let mut bytes = vec![0u8; 0xbe];
+        bytes[0xa0..0xa4].copy_from_slice(b"DEMO");
+        bytes[0xac..0xb0].copy_from_slice(b"ABCD");
+        bytes[0xb2] = 0x96;
+        bytes[0xbd] = bytes[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+        assert_eq!(report(bytes).unwrap().format, Format::GameBoyAdvance);
+    }
+
+    #[test]
+    fn recognizes_synthetic_game_boy_header() {
+        let mut bytes = vec![0u8; 0x150];
+        bytes[0x104..0x134].copy_from_slice(&GB_LOGO);
+        bytes[0x134..0x138].copy_from_slice(b"DEMO");
+        bytes[0x143] = 0x80;
+        bytes[0x14d] = bytes[0x134..0x14d].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+        assert_eq!(report(bytes).unwrap().format, Format::GameBoyColor);
+    }
+
+    #[test]
+    fn unknown_file_does_not_guess_by_extension() {
+        assert_eq!(report(vec![0u8; 0x400]).unwrap().format, Format::Unknown);
+    }
+}
