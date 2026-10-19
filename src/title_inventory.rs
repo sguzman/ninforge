@@ -233,7 +233,7 @@ mod tests {
             linked: Option<u64>, marker: u8) {
             let dir = self.0.join(name);
             fs::create_dir(&dir).unwrap();
-            let ext_len = if linked.is_some() {0x10usize} else {0};
+            let ext_len = if matches!(kind, 0x80..=0x83) {0x10usize} else {0};
             let mut cnmt = vec![0u8; 0x20 + ext_len + 0x20];
             cnmt[..8].copy_from_slice(&title.to_le_bytes());
             cnmt[8..12].copy_from_slice(&version.to_le_bytes());
@@ -242,7 +242,8 @@ mod tests {
             if let Some(id) = linked {
                 cnmt[0x20..0x28].copy_from_slice(&id.to_le_bytes());
             }
-            cnmt[cnmt.len() - 1] = marker;
+            let last = cnmt.len() - 1;
+            cnmt[last] = marker;
             fs::write(dir.join("metadata.cnmt"), cnmt).unwrap();
         }
     }
