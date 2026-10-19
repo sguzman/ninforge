@@ -32,10 +32,10 @@ ninforge extract ./game.nds nitrofs/sound/bgm.bin ./bgm.bin
 ninforge scan /drive/games --json
 ```
 
-- `info` reads only small header ranges except the bounded PFS0 directory. It uses signatures and sanity checks rather than trusting filename extensions.
+- `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
 - `list` enumerates PFS0 entries or header-defined DS regions (ARM9/ARM7, FNT/FAT, overlay tables). DS section labels are **not** an internal filesystem. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
 - `verify` validates PFS0 entry names, non-overlap and bounds, or DS section bounds. It is **not** a content hash check, signature check, or authenticity guarantee.
-- `extract` writes **one specified** PFS0 entry or DS section to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
+- `extract` writes **one specified** PFS0 entry, DS section or NitroFS file to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
 - `scan <directory>` recursively inventories recognized game files, skips symlinks and streams file reports; `scan --json` uses NDJSON (one object per line), reports bad files to stderr and exits nonzero on errors.
 - `--json` on `info` and `list` yields a stable initial machine-readable shape for integration with tools such as Cheatarium.
 
