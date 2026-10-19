@@ -356,7 +356,8 @@ fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         );
     };
     let parsed = parse_package_flags(flags)?;
-    let mut audit = load_package_audit(Path::new(nsp), Path::new(cnmt), parsed.hash, parsed.headers)?;
+    let mut audit =
+        load_package_audit(Path::new(nsp), Path::new(cnmt), parsed.hash, parsed.headers)?;
     if let Some(path) = parsed.nacp {
         audit.attach_nacp(&mut File::open(path)?)?;
     }
@@ -380,7 +381,11 @@ fn load_package_audit(
     let mut archive = File::open(nsp)?;
     let mut metadata = File::open(cnmt)?;
     if headers {
-        Ok(audit_switch_package_with_headers(&mut archive, &mut metadata, hash)?)
+        Ok(audit_switch_package_with_headers(
+            &mut archive,
+            &mut metadata,
+            hash,
+        )?)
     } else if hash {
         Ok(audit_switch_package_with_hashes(
             &mut archive,
@@ -408,7 +413,8 @@ fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Erro
         );
     }
     let sidecars = discover_metadata_dir(Path::new(metadata_dir))?;
-    let mut audit = load_package_audit(Path::new(nsp), &sidecars.cnmt, parsed.hash, parsed.headers)?;
+    let mut audit =
+        load_package_audit(Path::new(nsp), &sidecars.cnmt, parsed.hash, parsed.headers)?;
     if let Some(path) = sidecars.nacp {
         audit.attach_nacp(&mut File::open(path)?)?;
     }
@@ -448,8 +454,11 @@ fn print_package_audit(audit: &PackageAudit) {
         audit.referenced.len()
     );
     if audit.headers_requested {
-        println!("Readable NCA header consistency: {} of {} entries (not authenticated)",
-            audit.header_count(HeaderStatus::Consistent), audit.referenced.len());
+        println!(
+            "Readable NCA header consistency: {} of {} entries (not authenticated)",
+            audit.header_count(HeaderStatus::Consistent),
+            audit.referenced.len()
+        );
     } else {
         println!("NCA headers not checked (opt in with --headers)");
     }

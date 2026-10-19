@@ -126,7 +126,10 @@ pub struct PackageAudit {
 }
 impl PackageAudit {
     pub fn header_count(&self, status: HeaderStatus) -> usize {
-        self.referenced.iter().filter(|record| record.header_status == status).count()
+        self.referenced
+            .iter()
+            .filter(|record| record.header_status == status)
+            .count()
     }
 
     pub fn hash_count(&self, status: HashStatus) -> usize {
@@ -243,7 +246,6 @@ pub fn audit_switch_package_with_hashes<R: Read + Seek, C: Read + Seek>(
     audit_package_internal(package, cnmt, true, false, false)
 }
 
-
 /// Read at most the first 0x400 bytes of each unambiguous, present NCA entry.
 /// Only plaintext NCA2/NCA3 headers can be structurally compared. This is
 /// independent of SHA-256 checking, which must be explicitly requested too.
@@ -299,9 +301,14 @@ fn audit_package_internal<R: Read + Seek, C: Read + Seek>(
         }
         if inspect_headers {
             if result.status == MatchStatus::Present {
-                let name = result.package_filename.as_deref()
+                let name = result
+                    .package_filename
+                    .as_deref()
                     .ok_or_else(|| invalid("present entry missing path"))?;
-                let entry = package.entries.iter().find(|entry| entry.name == name)
+                let entry = package
+                    .entries
+                    .iter()
+                    .find(|entry| entry.name == name)
                     .ok_or_else(|| invalid("present entry missing from parsed package"))?;
                 compare_header(package_bytes, entry, record, &mut result)?;
             } else {
@@ -389,7 +396,9 @@ fn compare_header<R: Read + Seek>(
         }
     };
     let field = |key: &str| -> Option<&str> {
-        report.metadata.iter()
+        report
+            .metadata
+            .iter()
             .find(|(label, _)| label == key)
             .map(|(_, value)| value.as_str())
     };
@@ -417,8 +426,11 @@ fn compare_header<R: Read + Seek>(
     result.header_status = if actual_size != content.size {
         HeaderStatus::SizeMismatch
     } else if let Some(expected) = expected_type {
-        if expected == actual_type { HeaderStatus::Consistent }
-        else { HeaderStatus::TypeMismatch }
+        if expected == actual_type {
+            HeaderStatus::Consistent
+        } else {
+            HeaderStatus::TypeMismatch
+        }
     } else {
         HeaderStatus::NotComparable
     };
@@ -841,7 +853,6 @@ mod tests {
         assert_eq!(result.count(MatchStatus::Present), 1);
     }
 
-
     fn readable_nca(kind: u8, declared_size: usize) -> Vec<u8> {
         let mut data = vec![0u8; declared_size];
         data[0x200..0x204].copy_from_slice(b"NCA3");
@@ -857,11 +868,17 @@ mod tests {
         let archive = nsp(&[("11111111111111111111111111111111.nca", &data)]);
         let meta = cnmt(&[(CONTENT_A, data.len() as u64, 1)]);
         let audit = audit_switch_package_with_headers(
-            &mut Cursor::new(archive), &mut Cursor::new(meta), false,
-        ).unwrap();
+            &mut Cursor::new(archive),
+            &mut Cursor::new(meta),
+            false,
+        )
+        .unwrap();
         assert!(audit.headers_requested);
         assert_eq!(audit.header_count(HeaderStatus::Consistent), 1);
-        assert_eq!(audit.referenced[0].header_program_id.as_deref(), Some("0100123456789000"));
+        assert_eq!(
+            audit.referenced[0].header_program_id.as_deref(),
+            Some("0100123456789000")
+        );
         assert_eq!(audit.referenced[0].header_declared_size, Some(0xc00));
         assert_eq!(audit.hash_count(HashStatus::NotChecked), 1);
     }
@@ -872,8 +889,11 @@ mod tests {
         let mut archive = nsp(&[("11111111111111111111111111111111.nca", &wrong_type)]);
         let meta = cnmt(&[(CONTENT_A, wrong_type.len() as u64, 1)]);
         let audit = audit_switch_package_with_headers(
-            &mut Cursor::new(&mut archive), &mut Cursor::new(meta), false,
-        ).unwrap();
+            &mut Cursor::new(&mut archive),
+            &mut Cursor::new(meta),
+            false,
+        )
+        .unwrap();
         assert_eq!(audit.header_count(HeaderStatus::TypeMismatch), 1);
         wrong_type[0x205] = 0;
         wrong_type[0x208..0x210].copy_from_slice(&0xd00u64.to_le_bytes());
@@ -882,7 +902,8 @@ mod tests {
             &mut Cursor::new(archive),
             &mut Cursor::new(cnmt(&[(CONTENT_A, wrong_type.len() as u64, 1)])),
             false,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(audit.header_count(HeaderStatus::SizeMismatch), 1);
     }
 
@@ -893,9 +914,13 @@ mod tests {
             &mut Cursor::new(archive),
             &mut Cursor::new(cnmt(&[(CONTENT_A, 0xc00, 1), (CONTENT_B, 0xc00, 3)])),
             false,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(audit.header_count(HeaderStatus::Unavailable), 2);
-        assert!(audit.referenced.iter().all(|r| r.header_program_id.is_none()));
+        assert!(audit
+            .referenced
+            .iter()
+            .all(|r| r.header_program_id.is_none()));
     }
 
     #[test]
@@ -907,7 +932,8 @@ mod tests {
             &mut Cursor::new(archive),
             &mut Cursor::new(cnmt(&[(CONTENT_A, 0xc00, 1)])),
             false,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(audit.header_count(HeaderStatus::Malformed), 1);
     }
 
