@@ -4,7 +4,7 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::package::{audit_nsp, audit_nsp_with_hashes, HashStatus, MatchStatus, PackageAudit};
+use ninforge::package::{audit_switch_package, audit_switch_package_with_hashes, HashStatus, MatchStatus, PackageAudit};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -226,9 +226,9 @@ Usage:
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
   ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
-  ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--hash] [--json]
+  ninforge package audit <nsp-or-xci> <cnmt> [--nacp <file>] [--main-nso <file>] [--hash] [--json]
                                            Inspect NSP + explicit external metadata
-  ninforge package audit-dir <nsp> <metadata-dir> [--hash] [--json]
+  ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--hash] [--json]
                                            Discover unique plaintext metadata sidecars
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
@@ -343,7 +343,7 @@ fn parse_package_flags(args: &[String]) -> Result<PackageFlags<'_>, Box<dyn std:
 fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [nsp, cnmt, flags @ ..] = args else {
         return Err(
-            "usage: ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--json]"
+            "usage: ninforge package audit <nsp-or-xci> <cnmt> [--nacp <file>] [--main-nso <file>] [--json]"
                 .into(),
         );
     };
@@ -371,9 +371,9 @@ fn load_package_audit(
     let mut archive = File::open(nsp)?;
     let mut metadata = File::open(cnmt)?;
     if hash {
-        Ok(audit_nsp_with_hashes(&mut archive, &mut metadata)?)
+        Ok(audit_switch_package_with_hashes(&mut archive, &mut metadata)?)
     } else {
-        Ok(audit_nsp(&mut archive, &mut metadata)?)
+        Ok(audit_switch_package(&mut archive, &mut metadata)?)
     }
 }
 
@@ -382,7 +382,7 @@ fn load_package_audit(
 fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [nsp, metadata_dir, flags @ ..] = args else {
         return Err(
-            "usage: ninforge package audit-dir <nsp> <metadata-dir> [--hash] [--json]".into(),
+            "usage: ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--hash] [--json]".into(),
         );
     };
     let parsed = parse_package_flags(flags)?;
@@ -409,6 +409,7 @@ fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Erro
 }
 
 fn print_package_audit(audit: &PackageAudit) {
+    println!("Package format: {}", audit.package_format);
     println!("CNMT claimed title ID: {}", audit.title_id);
     println!("CNMT claimed version: {}", audit.version);
     println!("CNMT claimed type: {}", audit.meta_type);
@@ -454,7 +455,8 @@ fn print_package_audit(audit: &PackageAudit) {
 
 fn package_audit_json(audit: &PackageAudit) -> String {
     let mut out = format!(
-        r#"{{"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"hashing_requested":{},"hashes_match_supplied_cnmt":{},"hash_matched":{},"hash_mismatched":{},"hash_unavailable":{},"contents":["#,
+        r#"{{"package_format":{},"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"hashing_requested":{},"hashes_match_supplied_cnmt":{},"hash_matched":{},"hash_mismatched":{},"hash_unavailable":{},"contents":["#,
+        json_string(audit.package_format.name()),
         json_string(&audit.title_id),
         json_string(&audit.version),
         json_string(&audit.meta_type),
@@ -548,6 +550,7 @@ mod tests {
     #[test]
     fn package_json_distinguishes_missing_unverified_metadata() {
         let report = PackageAudit {
+            package_format: Format::SwitchNsp,
             title_id: "0123".into(),
             version: "65536".into(),
             meta_type: "patch".into(),
@@ -573,6 +576,7 @@ mod tests {
             }],
         };
         let json = package_audit_json(&report);
+        assert!(json.contains(r#""package_format":"Switch NSP/PFS0""#));
         assert!(json.contains(r#""metadata_source":"external_cnmt_unverified""#));
         assert!(json.contains(r#""package_filename":null"#));
         assert!(json.contains(r#""status":"missing""#));

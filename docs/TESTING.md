@@ -51,3 +51,7 @@ CNMT content records preserve their 32-byte SHA-256 digest. In-memory synthetic 
 ## Metadata directory discovery
 
 The `package audit-dir` shortcut never recurses, never follows symlinks, and refuses competing `.cnmt` or `.nacp` sidecars. Only `main.nso` is considered the designated executable; unrelated `.nso` files are ignored. Tests cover unique, absent, duplicate, nested and symlink candidates. Supplying files in a common directory is not proof of common title provenance.
+
+## XCI package correlation
+
+Synthetic nested XCI/HFS0 root-and-secure partitions are used to verify CNMT reference matching, SHA-256 checks of NCA byte ranges and rejection of tempting decoy names outside `root/secure/`. The older `audit_nsp` API continues rejecting XCI, while new generic package-audit APIs and the CLI support both NSP and XCI. A matched hash confirms only correspondence to the separately supplied, unauthenticated plaintext CNMT.

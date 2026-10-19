@@ -5,7 +5,7 @@
 | Switch NSP (PFS0) | `PFS0` magic | Entry count | Yes | One entry | No; names, non-overlap and bounds only |
 | Switch HFS0 | `HFS0` signature | Entry count | Yes | One entry | No; structural checks only |
 | Switch XCI | `HEAD` at 0x100 | Root partition offset and entry count | Root and nested HFS0 partitions | One entry | No; structural checks only |
-| Switch package audit | Explicit NSP + plaintext CNMT; optional NACP/NSO and `--hash` | Claimed title/version and content references; external title/build data tagged unverified | Referenced NCA names and SHA-256 comparison status | No | Optional full NCA SHA-256 against supplied unverified CNMT; not authenticity validation |
+| Switch package audit | NSP/PFS0 or XCI `root/secure` + plaintext CNMT; optional NACP/NSO and `--hash` | Claimed title/version and content references; external title/build data tagged unverified | Referenced NCA names and SHA-256 comparison status | No | Optional full NCA SHA-256 against supplied unverified CNMT; not authenticity validation |
 | Switch CNMT | Explicit plaintext file | Title ID, version, linked NCA content IDs/sizes | References only | No | No; digest not checked |
 | Switch NSO | `NSO0` header | Full module build ID and Atmosphère short cheat build ID | No | No | No; header only |
 | Switch NACP | Explicit command (no magic) | Localized titles, publishers, display version and IDs | No | No | No; metadata parser only |
