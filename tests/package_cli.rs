@@ -58,7 +58,11 @@ impl Fixture {
         let cnmt = directory.join("synthetic.cnmt");
         fs::write(&nsp, package).unwrap();
         fs::write(&cnmt, metadata).unwrap();
-        Self { directory, nsp, cnmt }
+        Self {
+            directory,
+            nsp,
+            cnmt,
+        }
     }
 
     fn audit(&self, flags: &[&str]) -> Output {
@@ -83,7 +87,11 @@ fn cli_hash_json_verifies_multichunk_nca_payload() {
     let bytes: Vec<u8> = (0..300_000).map(|index| (index % 251) as u8).collect();
     let fixture = Fixture::new(&bytes, &bytes);
     let output = fixture.audit(&["--hash", "--json"]);
-    assert!(output.status.success(), "{:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""hashes_match_supplied_cnmt":true"#));
     assert!(json.contains(r#""hash_status":"matched""#));
