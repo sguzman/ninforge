@@ -46,12 +46,30 @@ fn content_name(n: u8) -> &'static str {
         _ => "unknown",
     }
 }
+/// A typed content reference from standalone CNMT metadata, not verified
+/// against the content's hash or any particular NSP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentRecord {
+    pub id: String,
+    pub size: u64,
+    pub content_type: &'static str,
+    pub attributes: u8,
+    pub id_offset: u8,
+}
+
 fn add(r: &mut Report, key: String, value: impl ToString) {
     r.metadata.push((key, value.to_string()));
 }
 /// Parse at most 16 MiB of an explicitly supplied plaintext CNMT file.
 /// CNMT has no signature, so it should never be autodetected.
 pub fn inspect_cnmt<R: Read + Seek>(r: &mut R) -> io::Result<Report> {
+    inspect_cnmt_with_content(r).map(|(report, _)| report)
+}
+
+/// Parse one plaintext CNMT once and return its typed content references.
+pub fn inspect_cnmt_with_content<R: Read + Seek>(
+    r: &mut R,
+) -> io::Result<(Report, Vec<ContentRecord>)> {
     let length = r.seek(SeekFrom::End(0))?;
     if !(0x40..=16 * 1024 * 1024).contains(&length) {
         return Err(bad("CNMT size not within supported range"));
@@ -120,16 +138,28 @@ pub fn inspect_cnmt<R: Read + Seek>(r: &mut R) -> io::Result<Report> {
             add(&mut report, name.into(), format!("{application:016X}"));
         }
     }
+    let mut references = Vec::with_capacity(usize::from(content_count));
     for i in 0..usize::from(content_count) {
         let at = records_at as usize + i * 0x38;
         let row = &b[at..at + 0x38];
         let mut size = 0u64;
-        for (j, byte) in row[0x30..0x36].iter().enumerate() {
+        // Modern CNMT has a 5-byte size and a separate attributes byte.
+        // Older 6-byte sizes above 1 TiB require a version-aware adapter.
+        for (j, byte) in row[0x30..0x35].iter().enumerate() {
             size |= u64::from(*byte) << (j * 8);
         }
+        let id = hex(&row[0x20..0x30]);
+        if row[0x20..0x30].iter().all(|b| *b == 0) {
+            return Err(bad("CNMT content reference has zero content ID"));
+        }
+        references.push(ContentRecord {
+            id: id.clone(), size, content_type: content_name(row[0x36]),
+            attributes: row[0x35], id_offset: row[0x37],
+        });
         let name = format!("content_{i}");
-        add(&mut report, format!("{name}_id"), hex(&row[0x20..0x30]));
+        add(&mut report, format!("{name}_id"), id);
         add(&mut report, format!("{name}_size"), size);
+        add(&mut report, format!("{name}_attributes"), row[0x35]);
         add(&mut report, format!("{name}_type"), content_name(row[0x36]));
         add(&mut report, format!("{name}_type_code"), row[0x36]);
         add(&mut report, format!("{name}_id_offset"), row[0x37]);
@@ -145,7 +175,7 @@ pub fn inspect_cnmt<R: Read + Seek>(r: &mut R) -> io::Result<Report> {
         add(&mut report, format!("{name}_version"), u32at(&b, at + 8));
         add(&mut report, format!("{name}_type"), meta_name(b[at + 0xc]));
     }
-    Ok(report)
+    Ok((report, references))
 }
 
 #[cfg(test)]
@@ -195,6 +225,20 @@ mod tests {
             .contains(&("related_0_type".into(), "application".into())));
         assert!(r.entries.is_empty());
     }
+    #[test]
+    fn typed_references_separate_attributes_from_five_byte_size() {
+        let mut fixture = fixture();
+        let record = 0x30;
+        fixture[record + 0x35] = 0xa4;
+        let (report, content) = inspect_cnmt_with_content(&mut Cursor::new(fixture)).unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0].size, 4660);
+        assert_eq!(content[0].attributes, 0xa4);
+        assert_eq!(content[0].content_type, "program");
+        assert_eq!(content[0].id, "000102030405060708090A0B0C0D0E0F");
+        assert!(report.metadata.contains(&("content_0_attributes".into(), "164".into())));
+    }
+
     #[test]
     fn rejects_short_invalid_counts_and_zero_id() {
         let mut b = fixture();
