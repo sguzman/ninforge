@@ -3,8 +3,8 @@
 //! These are *extension hints*, not authenticated Nintendo save formats. Save
 //! serialization is game- and emulator-specific. This module never edits saves.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, ErrorKind, Read, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
