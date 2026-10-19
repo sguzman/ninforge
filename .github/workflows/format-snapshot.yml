@@ -14,10 +14,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test --all-targets
       - uses: actions/upload-artifact@v4
         with:
           name: rustfmt-source
           path: src/
           if-no-files-found: error
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+        if: always()
