@@ -36,6 +36,10 @@ Within each phase, deliver: recognition -> trustworthy metadata -> validated dir
 - Documentation accurately distinguishes detected, partially parsed, and unsupported formats.
 - No commercial ROMs, saves, or console keys in any tracked file or release artifact.
 
+## Package correlation MVP
+
+Implemented: explicit plaintext CNMT + PFS0 NSP name-and-size audit, structured content statuses, and machine-readable output. Does not authenticate CNMT provenance, decrypt encrypted meta NCAs, verify SHA-256, derive executable NSO build IDs from encrypted content, or automatically associate multiple installed game versions. These remain future work.
+
 ## Save inventory MVP
 
 Implemented: extension-based, read-only candidate enumeration plus explicit, non-overwriting single-file backup. **Not implemented**: automatic emulator discovery, save-file format validation, game-to-save matching, save editing, or directory-wide transactional backups. Those require separate platform adapters and adversarial tests.

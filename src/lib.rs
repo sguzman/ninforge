@@ -4,6 +4,7 @@
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
 pub mod cnmt;
+pub mod package;
 mod hfs0;
 pub mod nacp;
 pub mod nca;

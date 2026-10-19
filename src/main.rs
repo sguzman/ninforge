@@ -2,6 +2,7 @@
 
 use ninforge::cnmt::inspect_cnmt;
 use ninforge::nacp::inspect_nacp;
+use ninforge::package::{audit_nsp, MatchStatus, PackageAudit};
 use ninforge::nca::inspect_decrypted_nca;
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
@@ -55,6 +56,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [cmd, sub, source, destination] if cmd == "saves" && sub == "backup" => {
             let copied = saves::backup(Path::new(source), Path::new(destination))?;
             println!("Backed up {copied} bytes to {destination} (source untouched)");
+        }
+        [cmd, sub, nsp, cnmt] if cmd == "package" && sub == "audit" => {
+            let result = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
+            print_package_audit(&result);
+        }
+        [cmd, sub, nsp, cnmt, flag]
+            if cmd == "package" && sub == "audit" && flag == "--json" =>
+        {
+            let result = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
+            println!("{}", package_audit_json(&result));
         }
         [cmd, sub, file] if cmd == "nca" && sub == "info" => {
             let report = inspect_decrypted_nca(&mut File::open(file)?)?;
@@ -218,6 +229,8 @@ Usage:
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
   ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
+  ninforge package audit <nsp> <cnmt> [--json]
+                                           Compare NSP entries with plaintext CNMT
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
@@ -281,6 +294,70 @@ fn report_json(report: &Report, include_entries: bool) -> String {
     text
 }
 
+
+fn print_package_audit(audit: &PackageAudit) {
+    println!("CNMT claimed title ID: {}", audit.title_id);
+    println!("CNMT claimed version: {}", audit.version);
+    println!("CNMT claimed type: {}", audit.meta_type);
+    println!("NSP entries: {}", audit.package_entries);
+    println!("Content referenced: {}", audit.referenced.len());
+    for content in &audit.referenced {
+        println!(
+            "{}\t{}\t{}\t{}\t{}",
+            content.status.name(),
+            content.content_type,
+            content.id,
+            content.expected_size,
+            content.package_filename.as_deref().unwrap_or("-")
+        );
+    }
+    println!(
+        "Size-matched: {} / {} (NOT hash/signature verified)",
+        audit.count(MatchStatus::Present),
+        audit.referenced.len()
+    );
+    println!("Unreferenced NCA entries: {}", audit.unreferenced_nca.len());
+    println!("External CNMT provenance is NOT authenticated to this NSP.");
+}
+
+fn package_audit_json(audit: &PackageAudit) -> String {
+    let mut out = format!(
+        r#"{{"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"contents":["#,
+        json_string(&audit.title_id),
+        json_string(&audit.version),
+        json_string(&audit.meta_type),
+        audit.package_entries,
+        audit.referenced.len(),
+        audit.complete_by_size(),
+        audit.count(MatchStatus::Present),
+        audit.count(MatchStatus::Missing),
+        audit.count(MatchStatus::SizeMismatch),
+        audit.count(MatchStatus::CompressedUnsupported),
+        audit.count(MatchStatus::Ambiguous),
+    );
+    for (index, content) in audit.referenced.iter().enumerate() {
+        if index != 0 { out.push(','); }
+        write!(
+            &mut out,
+            r#"{{"id":{},"type":{},"expected_size":{},"expected_filename":{},"package_filename":{},"package_size":{},"status":{}}}"#,
+            json_string(&content.id),
+            json_string(content.content_type),
+            content.expected_size,
+            json_string(&content.expected_filename),
+            content.package_filename.as_ref().map_or("null".to_string(), |s| json_string(s)),
+            content.package_size.map_or("null".to_string(), |n| n.to_string()),
+            json_string(content.status.name()),
+        ).expect("String write");
+    }
+    out.push_str(r#"],"unreferenced_nca":["#);
+    for (index, file) in audit.unreferenced_nca.iter().enumerate() {
+        if index != 0 { out.push(','); }
+        out.push_str(&json_string(file));
+    }
+    out.push_str("]}");
+    out
+}
+
 fn json_string(value: &str) -> String {
     let mut escaped = String::from("\"");
     for c in value.chars() {
@@ -303,6 +380,27 @@ fn json_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_json_distinguishes_missing_unverified_metadata() {
+        let report = PackageAudit {
+            title_id: "0123".into(), version: "65536".into(), meta_type: "patch".into(),
+            package_entries: 1,
+            referenced: vec![ninforge::package::ContentMatch {
+                id: "0011".into(), content_type: "program",
+                expected_size: 7, expected_filename: "0011.nca".into(),
+                package_filename: None, package_size: None,
+                status: MatchStatus::Missing,
+            }],
+            unreferenced_nca: vec!["other.nca".into()],
+        };
+        let json = package_audit_json(&report);
+        assert!(json.contains(r#""metadata_source":"external_cnmt_unverified""#));
+        assert!(json.contains(r#""package_filename":null"#));
+        assert!(json.contains(r#""status":"missing""#));
+        assert!(json.contains(r#""hashes_verified":false"#));
+        assert!(json.contains(r#""unreferenced_nca":["other.nca"]"#));
+    }
 
     #[test]
     fn json_escapes_control_characters() {

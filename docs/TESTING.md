@@ -35,3 +35,7 @@ A synthetic NSO0 header verifies that the Atmosphère cheat ID uses the first ei
 ## NCA and CNMT
 
 Synthetic test headers only: keyless/decrypted NCA headers with content type, title/program ID, section bounds, and invalid overlapping or oversized sections; plaintext CNMT files with title ID, version, patch relation, referenced content IDs, malformed counts and truncation. No keys, retail NCAs or game data are stored. No cryptographic validation is claimed.
+
+## Package-level metadata audit
+
+Synthetic in-memory NSP entries and plaintext CNMT records are correlated by exact 16-byte hexadecimal content ID and expected NCA name, without decryption. Tests cover matched and missing content, mismatched lengths, unsupported `.ncz` compression, duplicate case variants, meta `.cnmt.nca` filenames, and unrelated/non-NSP inputs. Passing the audit is **not** proof of title authenticity or validated SHA-256 hashes.
