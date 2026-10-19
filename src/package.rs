@@ -93,7 +93,10 @@ pub struct PackageAudit {
 }
 impl PackageAudit {
     pub fn hash_count(&self, status: HashStatus) -> usize {
-        self.referenced.iter().filter(|content| content.hash_status == status).count()
+        self.referenced
+            .iter()
+            .filter(|content| content.hash_status == status)
+            .count()
     }
 
     /// True only when --hash was requested and every referenced NCA exactly
@@ -216,9 +219,14 @@ fn audit_nsp_internal<R: Read + Seek, C: Read + Seek>(
         }
         if verify_hashes {
             if result.status == MatchStatus::Present {
-                let name = result.package_filename.as_deref()
+                let name = result
+                    .package_filename
+                    .as_deref()
                     .ok_or_else(|| invalid("present entry missing path"))?;
-                let entry = package.entries.iter().find(|entry| entry.name == name)
+                let entry = package
+                    .entries
+                    .iter()
+                    .find(|entry| entry.name == name)
                     .ok_or_else(|| invalid("present entry missing from parsed NSP"))?;
                 let digest = hash_entry(nsp, entry)?;
                 result.actual_sha256 = Some(sha256_hex(&digest));
@@ -525,7 +533,6 @@ mod tests {
         );
     }
 
-
     fn cnmt_with_hash(id: [u8; 16], content: &[u8]) -> Vec<u8> {
         let mut metadata = cnmt(&[(id, content.len() as u64, 1)]);
         let hash = Sha256::digest(content);
@@ -538,7 +545,8 @@ mod tests {
         let body = b"abc";
         let archive = nsp(&[("11111111111111111111111111111111.nca", body)]);
         let metadata = cnmt_with_hash(CONTENT_A, body);
-        let audit = audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        let audit =
+            audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
         assert_eq!(audit.count(MatchStatus::Present), 1);
         assert_eq!(audit.hash_count(HashStatus::Matched), 1);
         assert!(audit.all_hashes_match_supplied_cnmt());
@@ -552,18 +560,23 @@ mod tests {
     fn hash_catches_same_length_tampering_undetected_by_size_only() {
         let archive = nsp(&[("11111111111111111111111111111111.nca", b"abd")]);
         let metadata = cnmt_with_hash(CONTENT_A, b"abc");
-        let audit = audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        let audit =
+            audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
         assert!(audit.complete_by_size());
         assert_eq!(audit.hash_count(HashStatus::Mismatched), 1);
         assert!(!audit.all_hashes_match_supplied_cnmt());
-        assert_ne!(audit.referenced[0].actual_sha256.as_deref(), Some(audit.referenced[0].expected_sha256.as_str()));
+        assert_ne!(
+            audit.referenced[0].actual_sha256.as_deref(),
+            Some(audit.referenced[0].expected_sha256.as_str())
+        );
     }
 
     #[test]
     fn missing_and_compressed_content_cannot_be_hash_verified() {
         let archive = nsp(&[("11111111111111111111111111111111.ncz", b"packed")]);
         let metadata = cnmt_with_hash(CONTENT_A, b"abcdef");
-        let audit = audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        let audit =
+            audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
         assert_eq!(audit.hash_count(HashStatus::Unavailable), 1);
         assert!(audit.referenced[0].actual_sha256.is_none());
         assert!(!audit.all_hashes_match_supplied_cnmt());
