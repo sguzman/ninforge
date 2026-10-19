@@ -63,3 +63,7 @@ Synthetic nested XCI/HFS0 root-and-secure partitions are used to verify CNMT ref
 ## Version-aware title inventory
 
 Synthetic sidecar bundles are indexed one directory deep only, ordered by folder name and grouped by claimed application ID. Cases cover base-versus-patch version distinctions, highest supplied patch revision, identical duplicate releases, conflicting same-title/version CNMT digest pairs, missing or malformed plaintext metadata, and symlinked bundle rejection. CLI JSON schema version 1 is kept separate from package audit JSON and explicitly states that attached NACP/NSO evidence is not authenticated.
+
+## Combined title and package inventory
+
+The optional `titles inventory <root> --packages` uses only files exactly named `package.nsp` or `package.xci` within each immediate bundle. The integration tests use synthetic CNMT+PFS0 fixtures to verify default metadata-only behavior, size-only matches, streamed SHA-256 matches, same-size tampering, bounded readable header checks, optional missing packages, ambiguous candidate refusal, flag validation, and symlink refusal. Package audit status remains nested under its originating title record. The source CNMT and the associated NACP/NSO are not authenticated.
