@@ -3,7 +3,8 @@
 | Family | Recognition method | Header metadata | List contents | Extraction | Full integrity verify |
 |---|---|---|---|---|---|
 | Switch NSP (PFS0) | `PFS0` magic | Entry count | Yes | One entry | No; names, non-overlap and bounds only |
-| Switch XCI | `HEAD` at 0x100 | Format/length only | No | No | No |
+| Switch HFS0 | `HFS0` signature | Entry count | Yes | One entry | No; structural checks only |
+| Switch XCI | `HEAD` at 0x100 | Root partition offset and entry count | Root and nested HFS0 partitions | One entry | No; structural checks only |
 | Switch NCA | Readable `NCA2`/`NCA3` at 0x200 | Format/length only | No | No | No |
 | 3DS cartridge | `NCSD` at 0x100 | Format/length only | No | No | No |
 | DS | Expected logo CRC + game code | Title, game/maker/unit/version codes and section count | Header sections and NitroFS files | One section or NitroFS file | No; bounded sections, directory/FAT/file checks |

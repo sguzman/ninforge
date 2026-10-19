@@ -4,6 +4,7 @@
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
 mod nds;
+mod hfs0;
 pub mod saves;
 
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ const MAX_PFS0_STRINGS: u32 = 16 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     SwitchNsp,
+    SwitchHfs0,
     SwitchXci,
     SwitchNca,
     Nintendo3dsCartridge,
@@ -35,6 +37,7 @@ impl Format {
     pub fn name(self) -> &'static str {
         match self {
             Self::SwitchNsp => "Switch NSP/PFS0",
+            Self::SwitchHfs0 => "Switch HFS0",
             Self::SwitchXci => "Switch XCI",
             Self::SwitchNca => "Switch NCA (readable header)",
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
@@ -52,7 +55,7 @@ impl Format {
 
     pub fn console(self) -> &'static str {
         match self {
-            Self::SwitchNsp | Self::SwitchXci | Self::SwitchNca => "switch",
+            Self::SwitchNsp | Self::SwitchHfs0 | Self::SwitchXci | Self::SwitchNca => "switch",
             Self::Nintendo3dsCartridge => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii => "wii",
@@ -119,6 +122,10 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
                 (u16::from(head[7] & 0xf0)) | u16::from(head[6] >> 4),
             );
         }
+    } else if head.starts_with(b"HFS0") {
+        report.format = Format::SwitchHfs0;
+        report.entries = hfs0::parse(input, 0, bytes, "")?;
+        report.add("entry_count", report.entries.len());
     } else if is_game_boy(&head) {
         let cgb = head[0x143] == 0x80 || head[0x143] == 0xc0;
         report.format = if cgb {
@@ -171,8 +178,12 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         if head.len() >= 0x60 {
             report.add("title", ascii_field(&head[0x20..0x60]));
         }
-    } else if head.len() >= 0x104 && &head[0x100..0x104] == b"HEAD" {
+    } else if head.len() >= 0x140 && &head[0x100..0x104] == b"HEAD" {
         report.format = Format::SwitchXci;
+        let (root, entries) = hfs0::parse_xci(input, &head, bytes)?;
+        report.add("root_partition_offset", root);
+        report.add("entry_count", entries.len());
+        report.entries = entries;
     } else if head.len() >= 0x104 && &head[0x100..0x104] == b"NCSD" {
         report.format = Format::Nintendo3dsCartridge;
     } else if head.len() >= 0x204

@@ -19,3 +19,7 @@ The repository CI is authoritative for compilation where a Rust toolchain is ava
 ## Save safety tests
 
 Synthetic byte strings only: candidate extensions, nested directories, no-overwrite backups, source immutability, and symlink refusal (on Unix). The backup uses same-directory hard links for no-clobber publication; filesystems without hard-link support produce an error rather than unsafe replacement. No user save, emulator configuration, or game data is stored in the repository.
+
+## Switch HFS0 and XCI
+
+Synthetic HFS0 entries and a nested XCI root partition are generated in memory. Negative tests reject unsafe filenames, impossible hash spans and truncated data. SHA-256 values and XCI signatures are **not** verified.

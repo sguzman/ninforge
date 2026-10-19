@@ -101,9 +101,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn require_sections(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
     match report.format {
-        Format::SwitchNsp | Format::NintendoDs => Ok(()),
+        Format::SwitchNsp | Format::SwitchHfs0 | Format::SwitchXci | Format::NintendoDs => Ok(()),
         _ => {
-            Err("this operation supports only Switch PFS0/NSP and Nintendo DS ROM sections".into())
+            Err("this operation supports Switch NSP/HFS0/XCI and Nintendo DS files".into())
         }
     }
 }
@@ -187,8 +187,8 @@ Ninforge {} - Nintendo file inspection (read-only by default)
 Usage:
   ninforge info <file> [--json]            Detect format and inspect header
   ninforge inspect <file> [--json]         Alias for info
-  ninforge list <file> [--json]            List NSP entries or NDS ROM sections
-  ninforge verify <file>                   Validate NSP/NDS structural bounds
+  ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
+  ninforge verify <file>                   Validate NSP/HFS0/XCI/DS bounds
   ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
