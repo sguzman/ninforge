@@ -9,6 +9,7 @@
 use crate::cnmt::inspect_cnmt_with_content;
 use crate::metadata_dir::discover_metadata_dir;
 use crate::nacp::inspect_nacp;
+use crate::package::{audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers, PackageAudit};
 use crate::{inspect, Format};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -23,7 +24,7 @@ fn invalid(s: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidInput, s)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct TitleRecord {
     pub bundle: String,
     /// CNMT title ID: patch/DLC have independent IDs from the base application.
@@ -44,6 +45,10 @@ pub struct TitleRecord {
     /// User-named main.nso build ID; no title-to-executable attribution is proven.
     pub module_build_id: Option<String>,
     pub atmosphere_cheat_build_id: Option<String>,
+    /// Only checked on explicit request. Selection uses exact package.nsp or package.xci.
+    pub package_filename: Option<String>,
+    /// Comparison against this record's external CNMT, not authenticity proof.
+    pub package_audit: Option<PackageAudit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +76,9 @@ pub struct TitleGroup {
 #[derive(Debug, Clone)]
 pub struct TitleInventory {
     pub bundles_scanned: usize,
+    pub package_audits_requested: bool,
+    pub packages_audited: usize,
+    pub packages_missing: usize,
     pub groups: Vec<TitleGroup>,
     pub version_collisions: usize,
 }
@@ -82,7 +90,43 @@ fn field<'a>(metadata: &'a [(String, String)], key: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
+/// Audit only a *deliberately named* archive within one bundle.
+/// Unrelated archives are ignored rather than guessed from content or filenames.
+fn discover_designated_package(directory: &Path) -> io::Result<Option<(PathBuf, String)>> {
+    const MAX_ITEMS: usize = 4096;
+    let mut found = None;
+    for (count, entry) in fs::read_dir(directory)?.enumerate() {
+        if count >= MAX_ITEMS {
+            return Err(invalid("bundle directory exceeds package-discovery safety limit"));
+        }
+        let entry = entry?;
+        let name = entry.file_name();
+        let matches = name.to_str().is_some_and(|s| {
+            s.eq_ignore_ascii_case("package.nsp") || s.eq_ignore_ascii_case("package.xci")
+        });
+        if !matches {
+            continue;
+        }
+        if !entry.file_type()?.is_file() {
+            return Err(invalid("designated package is not a regular non-symlink file"));
+        }
+        if found.is_some() {
+            return Err(invalid("multiple designated packages in one bundle"));
+        }
+        let filename = name.into_string()
+            .map_err(|_| invalid("designated package filename is not UTF-8"))?;
+        found = Some((entry.path(), filename));
+    }
+    Ok(found)
+}
+
+fn read_record(
+    directory: &Path,
+    bundle: String,
+    check_packages: bool,
+    verify_hashes: bool,
+    inspect_headers: bool,
+) -> io::Result<TitleRecord> {
     let metadata = discover_metadata_dir(directory)?;
     let mut file = File::open(&metadata.cnmt)?;
     // An explicit upper bound even if the file grows between discovery and read.
@@ -97,7 +141,7 @@ fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
         .iter()
         .map(|byte| format!("{byte:02X}"))
         .collect::<String>();
-    let (report, contents) = inspect_cnmt_with_content(&mut Cursor::new(bytes))?;
+    let (report, contents) = inspect_cnmt_with_content(&mut Cursor::new(&bytes))?;
     let title_id = field(&report.metadata, "title_id")
         .ok_or_else(|| invalid("CNMT title ID absent"))?
         .to_string();
@@ -142,6 +186,24 @@ fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
         atmosphere_cheat_build_id =
             field(&report.metadata, "atmosphere_cheat_build_id").map(str::to_owned);
     }
+    let (package_filename, package_audit) = if check_packages {
+        if let Some((path, name)) = discover_designated_package(directory)? {
+            let mut package = File::open(path)?;
+            let mut cnmt = Cursor::new(&bytes);
+            let audit = if inspect_headers {
+                audit_switch_package_with_headers(&mut package, &mut cnmt, verify_hashes)?
+            } else if verify_hashes {
+                audit_switch_package_with_hashes(&mut package, &mut cnmt)?
+            } else {
+                audit_switch_package(&mut package, &mut cnmt)?
+            };
+            (Some(name), Some(audit))
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
     Ok(TitleRecord {
         bundle,
         title_id,
@@ -156,12 +218,29 @@ fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
         display_version,
         module_build_id,
         atmosphere_cheat_build_id,
+        package_filename,
+        package_audit,
     })
 }
 
 /// Root is a collection of immediate child directories, each holding one CNMT.
 /// No inference from folder names, filename-based title IDs or other modules.
 pub fn inventory_metadata_root(root: &Path) -> io::Result<TitleInventory> {
+    inventory_metadata_root_with_packages(root, false, false, false)
+}
+
+/// Opt-in audit of uniquely named package.nsp/package.xci alongside each
+/// plaintext metadata bundle. An absent package remains metadata-only.
+/// SHA-256 and readable NCA header checks are independently opt-in.
+pub fn inventory_metadata_root_with_packages(
+    root: &Path,
+    check_packages: bool,
+    verify_hashes: bool,
+    inspect_headers: bool,
+) -> io::Result<TitleInventory> {
+    if (verify_hashes || inspect_headers) && !check_packages {
+        return Err(invalid("hash/header options require explicit package auditing"));
+    }
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
         return Err(invalid("inventory root must be an ordinary directory"));
     }
@@ -191,8 +270,10 @@ pub fn inventory_metadata_root(root: &Path) -> io::Result<TitleInventory> {
     }
     dirs.sort_by(|left, right| left.0.cmp(&right.0));
     let mut groups: BTreeMap<String, Vec<TitleRecord>> = BTreeMap::new();
+    let mut packages_audited = 0;
     for (name, path) in &dirs {
-        let record = read_record(path, name.clone())?;
+        let record = read_record(path, name.clone(), check_packages, verify_hashes, inspect_headers)?;
+        packages_audited += usize::from(record.package_audit.is_some());
         groups
             .entry(record.application_group_id.clone())
             .or_default()
@@ -255,6 +336,9 @@ pub fn inventory_metadata_root(root: &Path) -> io::Result<TitleInventory> {
     }
     Ok(TitleInventory {
         bundles_scanned: dirs.len(),
+        package_audits_requested: check_packages,
+        packages_audited,
+        packages_missing: if check_packages { dirs.len() - packages_audited } else { 0 },
         groups: result,
         version_collisions: versions,
     })
