@@ -43,3 +43,7 @@ Synthetic in-memory NSP entries and plaintext CNMT records are correlated by exa
 ## External title and executable evidence
 
 Package audit tests construct an entirely synthetic 0x4000-byte NACP and NSO0 header. The evidence attaches only when explicitly supplied; malformed NACP, non-NSO files, and duplicate attachment attempts are rejected. The CLI accepts `--nacp`, `--main-nso`, and `--json` without order dependence after the required NSP and CNMT paths, rejecting duplicates and missing flag values. The JSON payload retains separate evidence provenance and `linked_to_package: false`, even when titles and build IDs are present. No title-to-executable association is cryptographically verified.
+
+## Optional full-content SHA-256 checks
+
+CNMT content records preserve their 32-byte SHA-256 digest. In-memory synthetic NSP/PFS0 fixtures prove that `--hash` hashes the NCA entry rather than the entire package wrapper (known SHA-256 of `abc`), detects same-length byte corruption, refuses to claim verification when files are missing or compressed, and skips hashing in the default fast audit. SHA-256 is implemented with the pure-Rust `sha2` crate. A digest match validates only correspondence to the user-provided CNMT, **not title authenticity**: external CNMT provenance and signatures remain unverified.
