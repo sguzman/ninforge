@@ -81,8 +81,15 @@ impl PackageAudit {
     /// Read a separately obtained NACP, preserving its identity as unverified
     /// external metadata. Display versions are NOT equivalent to CNMT versions.
     pub fn attach_nacp<R: Read + Seek>(&mut self, nacp: &mut R) -> io::Result<()> {
-        if self.external_evidence.iter().any(|item| item.kind == "nacp") {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "NACP already attached"));
+        if self
+            .external_evidence
+            .iter()
+            .any(|item| item.kind == "nacp")
+        {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "NACP already attached",
+            ));
         }
         let report = inspect_nacp(nacp)?;
         self.external_evidence.push(ExternalEvidence {
@@ -96,12 +103,22 @@ impl PackageAudit {
     /// Read an explicitly user-designated main NSO. A build ID identifies an
     /// executable, not the title; no automatic association is inferred.
     pub fn attach_main_nso<R: Read + Seek>(&mut self, nso: &mut R) -> io::Result<()> {
-        if self.external_evidence.iter().any(|item| item.kind == "main_nso") {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "main NSO already attached"));
+        if self
+            .external_evidence
+            .iter()
+            .any(|item| item.kind == "main_nso")
+        {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "main NSO already attached",
+            ));
         }
         let report = inspect(nso)?;
         if report.format != Format::SwitchNso {
-            return Err(io::Error::new(ErrorKind::InvalidInput, "expected readable NSO0 executable"));
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "expected readable NSO0 executable",
+            ));
         }
         self.external_evidence.push(ExternalEvidence {
             kind: "main_nso",
@@ -333,12 +350,10 @@ mod tests {
         assert!(audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(vec![0u8; 128])).is_err());
     }
 
-
     fn synthetic_nacp(title: &str, display_version: &str) -> Vec<u8> {
         let mut bytes = vec![0u8; 0x4000];
         bytes[..title.len()].copy_from_slice(title.as_bytes());
-        bytes[0x3060..0x3060 + display_version.len()]
-            .copy_from_slice(display_version.as_bytes());
+        bytes[0x3060..0x3060 + display_version.len()].copy_from_slice(display_version.as_bytes());
         bytes
     }
 
@@ -354,21 +369,32 @@ mod tests {
         let archive = nsp(&[("11111111111111111111111111111111.nca", b"four")]);
         let refs = cnmt(&[(CONTENT_A, 4, 1)]);
         let mut audit = audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(refs)).unwrap();
-        audit.attach_nacp(&mut Cursor::new(synthetic_nacp("Sample", "1.2.3"))).unwrap();
-        audit.attach_main_nso(&mut Cursor::new(synthetic_nso())).unwrap();
+        audit
+            .attach_nacp(&mut Cursor::new(synthetic_nacp("Sample", "1.2.3")))
+            .unwrap();
+        audit
+            .attach_main_nso(&mut Cursor::new(synthetic_nso()))
+            .unwrap();
         assert!(audit.complete_by_size());
         assert_eq!(audit.external_evidence.len(), 2);
-        assert_eq!(audit.external_evidence[0].provenance, "user_supplied_unverified");
-        assert_eq!(audit.external_evidence[1].provenance, "user_designated_main_unverified");
-        assert!(audit.external_evidence[0].fields.contains(
-            &("title_american_english".into(), "Sample".into())
-        ));
-        assert!(audit.external_evidence[0].fields.contains(
-            &("display_version".into(), "1.2.3".into())
-        ));
-        assert!(audit.external_evidence[1].fields.contains(
-            &("atmosphere_cheat_build_id".into(), "123456789ABCDEF0".into())
-        ));
+        assert_eq!(
+            audit.external_evidence[0].provenance,
+            "user_supplied_unverified"
+        );
+        assert_eq!(
+            audit.external_evidence[1].provenance,
+            "user_designated_main_unverified"
+        );
+        assert!(audit.external_evidence[0]
+            .fields
+            .contains(&("title_american_english".into(), "Sample".into())));
+        assert!(audit.external_evidence[0]
+            .fields
+            .contains(&("display_version".into(), "1.2.3".into())));
+        assert!(audit.external_evidence[1].fields.contains(&(
+            "atmosphere_cheat_build_id".into(),
+            "123456789ABCDEF0".into()
+        )));
         assert_eq!(audit.title_id, "0100123456789000");
         assert_eq!(audit.version, "65536");
     }
@@ -379,15 +405,25 @@ mod tests {
         let refs = cnmt(&[(CONTENT_A, 4, 1)]);
         let mut audit = audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(refs)).unwrap();
         assert_eq!(
-            audit.attach_main_nso(&mut Cursor::new(vec![0u8; 0x100])).unwrap_err().kind(),
+            audit
+                .attach_main_nso(&mut Cursor::new(vec![0u8; 0x100]))
+                .unwrap_err()
+                .kind(),
             ErrorKind::InvalidInput
         );
         assert!(audit.external_evidence.is_empty());
-        assert!(audit.attach_nacp(&mut Cursor::new(vec![0u8; 0x4000])).is_err());
+        assert!(audit
+            .attach_nacp(&mut Cursor::new(vec![0u8; 0x4000]))
+            .is_err());
         assert!(audit.external_evidence.is_empty());
-        audit.attach_main_nso(&mut Cursor::new(synthetic_nso())).unwrap();
+        audit
+            .attach_main_nso(&mut Cursor::new(synthetic_nso()))
+            .unwrap();
         assert_eq!(
-            audit.attach_main_nso(&mut Cursor::new(synthetic_nso())).unwrap_err().kind(),
+            audit
+                .attach_main_nso(&mut Cursor::new(synthetic_nso()))
+                .unwrap_err()
+                .kind(),
             ErrorKind::InvalidInput
         );
     }

@@ -287,7 +287,6 @@ fn report_json(report: &Report, include_entries: bool) -> String {
     text
 }
 
-
 #[derive(Debug, Default, PartialEq, Eq)]
 struct PackageFlags<'a> {
     json: bool,
@@ -320,7 +319,11 @@ fn parse_package_flags(args: &[String]) -> Result<PackageFlags<'_>, Box<dyn std:
                 );
                 i += 2;
             }
-            other => return Err(format!("unknown, repeated, or malformed package option: {other}").into()),
+            other => {
+                return Err(
+                    format!("unknown, repeated, or malformed package option: {other}").into(),
+                )
+            }
         }
     }
     Ok(flags)
@@ -372,7 +375,10 @@ fn print_package_audit(audit: &PackageAudit) {
     );
     println!("Unreferenced NCA entries: {}", audit.unreferenced_nca.len());
     for evidence in &audit.external_evidence {
-        println!("External evidence: {} ({})", evidence.kind, evidence.provenance);
+        println!(
+            "External evidence: {} ({})",
+            evidence.kind, evidence.provenance
+        );
         for (name, value) in &evidence.fields {
             println!("  {name}: {value}");
         }
@@ -434,8 +440,7 @@ fn package_audit_json(audit: &PackageAudit) -> String {
             if field_index != 0 {
                 out.push(',');
             }
-            write!(&mut out, "{}:{}", json_string(key), json_string(value))
-                .expect("String write");
+            write!(&mut out, "{}:{}", json_string(key), json_string(value)).expect("String write");
         }
         out.push_str("}}");
     }
@@ -500,12 +505,14 @@ mod tests {
         assert!(json.contains(r#""atmosphere_cheat_build_id":"1234ABCD""#));
     }
 
-
     #[test]
     fn package_flags_are_explicit_and_reject_duplicates() {
         let args = vec![
-            "--main-nso".into(), "main.nso".into(), "--json".into(),
-            "--nacp".into(), "control.nacp".into(),
+            "--main-nso".into(),
+            "main.nso".into(),
+            "--json".into(),
+            "--nacp".into(),
+            "control.nacp".into(),
         ];
         let flags = parse_package_flags(&args).unwrap();
         assert_eq!(flags.nacp, Some("control.nacp"));
