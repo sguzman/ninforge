@@ -284,3 +284,52 @@ fn cli_xci_audit_dir_discovers_external_cnmt() {
     assert!(json.contains(r#""hash_status":"not_checked""#));
     assert!(json.contains(r#""present":1"#));
 }
+
+
+fn sample_readable_nca(content_type: u8) -> Vec<u8> {
+    let mut nca = vec![0u8; 0xc00];
+    nca[0x200..0x204].copy_from_slice(b"NCA3");
+    nca[0x205] = content_type;
+    nca[0x208..0x210].copy_from_slice(&0xc00u64.to_le_bytes());
+    nca[0x210..0x218].copy_from_slice(&0x0100123456789000u64.to_le_bytes());
+    nca
+}
+
+#[test]
+fn cli_plaintext_header_consistent_and_digest_matched() {
+    let nca = sample_readable_nca(0);
+    let fixture = Fixture::new(&nca, &nca);
+    let output = fixture.audit(&["--headers", "--hash", "--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""headers_requested":true"#));
+    assert!(json.contains(r#""header_status":"consistent""#));
+    assert!(json.contains(r#""header_program_id":"0100123456789000""#));
+    assert!(json.contains(r#""header_consistent":1"#));
+    assert!(json.contains(r#""hash_status":"matched""#));
+}
+
+#[test]
+fn cli_plaintext_header_mismatch_is_not_a_title_verification() {
+    let nca = sample_readable_nca(2);
+    let fixture = Fixture::new(&nca, &nca);
+    let output = fixture.audit_dir(&["--headers", "--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""header_status":"type_mismatch""#));
+    assert!(json.contains(r#""header_type_mismatch":1"#));
+    assert!(json.contains(r#""hashing_requested":false"#));
+    assert!(json.contains(r#""hashes_verified":false"#));
+}
+
+#[test]
+fn cli_encrypted_header_does_not_create_a_false_program_id() {
+    let opaque = vec![0x99u8; 0xc00];
+    let fixture = Fixture::new(&opaque, &opaque);
+    let output = fixture.audit(&["--headers", "--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""header_status":"unavailable""#));
+    assert!(json.contains(r#""header_program_id":null"#));
+    assert!(json.contains(r#""header_unavailable":1"#));
+}
