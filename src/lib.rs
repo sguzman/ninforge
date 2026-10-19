@@ -136,6 +136,9 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("rom_version", head[0x1e]);
         report.entries = nds::sections(&head, bytes)?;
         report.add("section_count", report.entries.len());
+        let files = nds::filesystem(input, &head, bytes)?;
+        report.add("nitrofs_file_count", files.len());
+        report.entries.extend(files);
     } else if head.len() >= 4 && (&head[0..4] == b"\x80\x37\x12\x40" || &head[0..4] == b"\x37\x80\x40\x12" || &head[0..4] == b"\x40\x12\x37\x80") {
         report.format = Format::Nintendo64;
         let order = match &head[0..4] {
