@@ -1,8 +1,8 @@
 //! Standalone binary for the Ninforge library. Pure std: no runtime dependencies.
 
+use ninforge::cnmt::inspect_cnmt;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::cnmt::inspect_cnmt;
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
