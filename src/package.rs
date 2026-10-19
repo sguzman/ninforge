@@ -46,7 +46,6 @@ pub struct ContentMatch {
     pub status: MatchStatus,
 }
 
-#[derive(Debug, Clone)]
 /// Metadata from a separately supplied, independently parsed file.
 /// Attribution to the audited NSP is NEVER established by this structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +55,7 @@ pub struct ExternalEvidence {
     pub fields: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone)]
 pub struct PackageAudit {
     /// These title/version fields come from an independently supplied,
     /// *unverified* plaintext CNMT, not directly from the NSP.
