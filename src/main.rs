@@ -4,7 +4,7 @@ use ninforge::{extract_entry, inspect, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
     if let Err(error) = run() {
@@ -28,23 +28,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd, file] if cmd == "list" => {
             let report = inspect(&mut File::open(file)?)?;
-            require_pfs0(&report)?;
+            require_sections(&report)?;
             for entry in &report.entries { println!("{}\t{}", entry.size, entry.name); }
         }
         [cmd, file, flag] if cmd == "list" && flag == "--json" => {
             let report = inspect(&mut File::open(file)?)?;
-            require_pfs0(&report)?;
+            require_sections(&report)?;
             println!("{}", report_json(&report, true));
         }
         [cmd, file] if cmd == "verify" => {
             let report = inspect(&mut File::open(file)?)?;
-            require_pfs0(&report)?;
-            println!("OK: PFS0 table and {} entry bounds are structurally valid (not a hash/signature check)", report.entries.len());
+            require_sections(&report)?;
+            println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
         }
+        [cmd, directory] if cmd == "scan" => scan(Path::new(directory), false)?,
+        [cmd, directory, flag] if cmd == "scan" && flag == "--json" => scan(Path::new(directory), true)?,
         [cmd, input, entry_name, output] if cmd == "extract" => {
             let mut archive = File::open(input)?;
             let report = inspect(&mut archive)?;
-            require_pfs0(&report)?;
+            require_sections(&report)?;
             let matches: Vec<&Entry> = report.entries.iter().filter(|entry| entry.name == *entry_name).collect();
             let [entry] = matches.as_slice() else {
                 return Err(format!("expected exactly one entry named {entry_name:?}, found {}", matches.len()).into());
@@ -68,10 +70,49 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn require_pfs0(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
-    if report.format != Format::SwitchNsp {
-        return Err("this operation currently supports only PFS0/NSP containers".into());
+fn require_sections(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
+    match report.format {
+        Format::SwitchNsp | Format::NintendoDs => Ok(()),
+        _ => Err("this operation supports only Switch PFS0/NSP and Nintendo DS ROM sections".into()),
     }
+}
+
+/// Inspect recognized files under a directory without following symlinks.
+/// Results are streamed in lexical order, not buffered in memory.
+fn scan(root: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if !root.is_dir() { return Err(format!("not a directory: {}", root.display()).into()); }
+    let mut stack = vec![root.to_path_buf()];
+    let mut errors = 0u64;
+    while let Some(path) = stack.pop() {
+        let kind = fs::symlink_metadata(&path)?.file_type();
+        if kind.is_symlink() { continue; }
+        if kind.is_dir() {
+            let mut children: Vec<PathBuf> = fs::read_dir(&path)?
+                .map(|item| item.map(|entry| entry.path()))
+                .collect::<Result<_, _>>()?;
+            children.sort();
+            stack.extend(children.into_iter().rev());
+            continue;
+        }
+        if !kind.is_file() { continue; }
+        match File::open(&path).and_then(|mut input| inspect(&mut input)) {
+            Ok(report) if report.format != Format::Unknown => {
+                if json {
+                    println!("{{\"path\":{},\"report\":{}}}",
+                        json_string(&path.to_string_lossy()), report_json(&report, false));
+                } else {
+                    println!("{}\t{}\t{}\t{}",
+                        report.format.console(), report.format, report.bytes, path.display());
+                }
+            }
+            Ok(_) => {},
+            Err(error) => {
+                errors += 1;
+                eprintln!("ninforge: {}: {error}", path.display());
+            }
+        }
+    }
+    if errors != 0 { return Err(format!("scan encountered {errors} unreadable or malformed file(s)").into()); }
     Ok(())
 }
 
@@ -82,13 +123,15 @@ Ninforge {} - Nintendo file inspection (read-only by default)
 Usage:
   ninforge info <file> [--json]            Detect format and inspect header
   ninforge inspect <file> [--json]         Alias for info
-  ninforge list <file> [--json]            List Switch NSP/PFS0 entries
-  ninforge verify <file>                   Validate PFS0 table and entry bounds
-  ninforge extract <file> <entry> <out>    Extract one PFS0 entry; never overwrite
+  ninforge list <file> [--json]            List NSP entries or NDS ROM sections
+  ninforge verify <file>                   Validate NSP/NDS structural bounds
+  ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
+  ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge help                            Show this help
 
 Limitations:
   No decryption, save editing, signing, repacking, or full cryptographic verify.
+  Scanning skips symlinks; --json scan output is newline-delimited JSON.
   NSP/PFS0 listing does not require Nintendo keys; many encrypted inner files do.
 ", env!("CARGO_PKG_VERSION"));
 }

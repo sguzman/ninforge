@@ -3,6 +3,9 @@
 //! Detection is based on content signatures and conservative header checks, not
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
+mod nds;
+
+use std::collections::HashSet;
 use std::fmt;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
@@ -130,6 +133,9 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("game_code", ascii_field(&head[12..16]));
         report.add("maker_code", ascii_field(&head[16..18]));
         report.add("unit_code", head[18]);
+        report.add("rom_version", head[0x1e]);
+        report.entries = nds::sections(&head, bytes)?;
+        report.add("section_count", report.entries.len());
     } else if head.len() >= 4 && (&head[0..4] == b"\x80\x37\x12\x40" || &head[0..4] == b"\x37\x80\x40\x12" || &head[0..4] == b"\x40\x12\x37\x80") {
         report.format = Format::Nintendo64;
         let order = match &head[0..4] {
@@ -196,6 +202,7 @@ fn parse_pfs0<R: Read + Seek>(reader: &mut R, length: u64) -> io::Result<Vec<Ent
     let mut strings = vec![0u8; string_size as usize];
     reader.read_exact(&mut strings)?;
     let mut entries = Vec::with_capacity(count as usize);
+    let mut names = HashSet::with_capacity(count as usize);
     for chunk in table.chunks_exact(24) {
         let relative = le_u64(&chunk[0..8]);
         let size = le_u64(&chunk[8..16]);
@@ -206,12 +213,24 @@ fn parse_pfs0<R: Read + Seek>(reader: &mut R, length: u64) -> io::Result<Vec<Ent
             .ok_or_else(|| invalid("PFS0 filename missing or not NUL-terminated"))?;
         let name = std::str::from_utf8(name_bytes)
             .map_err(|_| invalid("PFS0 filename is not UTF-8"))?.to_string();
+        if !names.insert(name.clone()) {
+            return Err(invalid("PFS0 has duplicate filenames"));
+        }
         let offset = data_start.checked_add(relative)
             .ok_or_else(|| invalid("PFS0 file offset overflow"))?;
         let end = offset.checked_add(size)
             .ok_or_else(|| invalid("PFS0 entry length overflow"))?;
         if end > length { return Err(invalid("PFS0 entry extends beyond input")); }
         entries.push(Entry { name, offset, size });
+    }
+    // Reject overlapping nonempty spans even when both happen to be within bounds.
+    let mut spans: Vec<(u64, u64)> = entries.iter()
+        .filter(|entry| entry.size != 0)
+        .map(|entry| (entry.offset, entry.offset + entry.size))
+        .collect();
+    spans.sort_unstable();
+    if spans.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+        return Err(invalid("PFS0 file regions overlap"));
     }
     Ok(entries)
 }
@@ -234,7 +253,7 @@ fn disc_id_ok(head: &[u8]) -> bool {
 fn is_gba(head: &[u8]) -> bool {
     if head.len() < 0xbe || head[0xb2] != 0x96 { return false; }
     if !head[0xac..0xb0].iter().all(|b| b.is_ascii_alphanumeric()) { return false; }
-    let checksum = head[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+    let checksum = head[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte)).wrapping_sub(0x19);
     checksum == head[0xbd]
 }
 fn is_nds(head: &[u8]) -> bool {
@@ -306,6 +325,53 @@ mod tests {
         assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
 
+
+    #[test]
+    fn pfs0_rejects_duplicate_names_and_overlap() {
+        // Two entries share one filename and overlap their data regions.
+        let mut raw = b"PFS0".to_vec();
+        raw.extend(2u32.to_le_bytes());
+        raw.extend(4u32.to_le_bytes());
+        raw.extend(0u32.to_le_bytes());
+        for (relative, size) in [(0u64, 2u64), (1, 1)] {
+            raw.extend(relative.to_le_bytes());
+            raw.extend(size.to_le_bytes());
+            raw.extend(0u32.to_le_bytes());
+            raw.extend(0u32.to_le_bytes());
+        }
+        raw.extend(b"a\0b\0xy");
+        assert_eq!(report(raw.clone()).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        raw[16 + 24 + 16..16 + 24 + 20].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(report(raw).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn gba_checksum_matches_independent_constant() {
+        // Subtract the documented 0x19 complement, not 29 individual ones.
+        let mut bytes = vec![0; 0xbe];
+        bytes[0xac..0xb0].copy_from_slice(b"ABCD");
+        bytes[0xb2] = 0x96;
+        let complement = bytes[0xa0..0xbd].iter().fold(0u8, |sum, b| sum.wrapping_sub(*b)).wrapping_sub(0x19);
+        assert_eq!(complement, 0x47);
+        bytes[0xbd] = complement;
+        assert_eq!(report(bytes).unwrap().format, Format::GameBoyAdvance);
+    }
+
+    #[test]
+    fn nds_sections_are_reported_and_checked() {
+        let mut bytes = vec![0; 0x300];
+        bytes[12..16].copy_from_slice(b"ABCD");
+        bytes[0x15c..0x15e].copy_from_slice(&[0x56, 0xcf]);
+        bytes[0x20..0x24].copy_from_slice(&0x200u32.to_le_bytes());
+        bytes[0x2c..0x30].copy_from_slice(&0x40u32.to_le_bytes());
+        let r = report(bytes.clone()).unwrap();
+        assert_eq!(r.format, Format::NintendoDs);
+        assert_eq!(r.entries[0].name, "arm9.bin");
+        assert_eq!(r.entries[0].size, 0x40);
+        bytes.truncate(0x230);
+        assert_eq!(report(bytes).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    }
+
     #[test]
     fn recognizes_nes_header() {
         let mut bytes = b"NES\x1a".to_vec();
@@ -322,7 +388,7 @@ mod tests {
         bytes[0xa0..0xa4].copy_from_slice(b"DEMO");
         bytes[0xac..0xb0].copy_from_slice(b"ABCD");
         bytes[0xb2] = 0x96;
-        bytes[0xbd] = bytes[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
+        bytes[0xbd] = bytes[0xa0..0xbd].iter().fold(0u8, |sum, byte| sum.wrapping_sub(*byte)).wrapping_sub(0x19);
         assert_eq!(report(bytes).unwrap().format, Format::GameBoyAdvance);
     }
 

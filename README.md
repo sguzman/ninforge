@@ -2,7 +2,7 @@
 
 A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and (later) saves across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency.
 
-**Current status: early, read-only format inspection.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. Only NSP/PFS0 supports internal file listing, bounded single-entry extraction and structural verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
+**Current status: early, read-only format inspection.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and DS header-defined regions support bounded listing, single-entry extraction and structural verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
 
 ## Build
 
@@ -25,17 +25,22 @@ ninforge list ./game.nsp
 ninforge list ./game.nsp --json
 ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
+ninforge list ./game.nds
+ninforge extract ./game.nds arm9.bin ./arm9.bin
+ninforge scan /drive/games --json
 ```
 
 - `info` reads only small header ranges except the bounded PFS0 directory. It uses signatures and sanity checks rather than trusting filename extensions.
-- `list` enumerates the internal PFS0 file names, sizes and offsets. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
-- `verify` validates PFS0 table structure, offsets and bounds. It is **not** a content hash check, signature check, or authenticity guarantee.
-- `extract` writes **one specified** PFS0 entry to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
-- `--json` yields a stable initial machine-readable shape for integration with tools such as Cheatarium.
+- `list` enumerates PFS0 entries or header-defined DS regions (ARM9/ARM7, FNT/FAT, overlay tables). DS section labels are **not** an internal filesystem. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
+- `verify` validates PFS0 entry names, non-overlap and bounds, or DS section bounds. It is **not** a content hash check, signature check, or authenticity guarantee.
+- `extract` writes **one specified** PFS0 entry or DS section to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
+- `scan <directory>` recursively inventories recognized game files, skips symlinks and streams file reports; `scan --json` uses NDJSON (one object per line), reports bad files to stderr and exits nonzero on errors.
+- `--json` on `info` and `list` yields a stable initial machine-readable shape for integration with tools such as Cheatarium.
 
 ## Architecture
 
 - `src/lib.rs`: format identification, metadata, bounded PFS0 directory parsing, streaming extraction.
+- `src/nds.rs`: header-declared DS regions with checked bounds.
 - `src/main.rs`: thin CLI presentation layer; no format-specific data logic.
 - Console modules will be separated as their parsers grow. Share generic IO/bounds utilities but **do not** impose a fake common save format.
 - Preserve a read-only default. Any future save editor requires format-aware validation, an explicit backup, and atomic replace/rollback.

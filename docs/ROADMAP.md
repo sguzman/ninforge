@@ -9,7 +9,7 @@ Reference: [Nintendo IR, worldwide hardware sales, June 30 2026](https://www.nin
 | Phase | Platforms | Why | Initial goal |
 |---|---|---|---|
 | 1 | **Switch** | Current Cheatarium/Eden pain + biggest installed base | NSP/PFS0 -> XCI/HFS0/NCA/NACP/CNMT, build/title IDs, safe extraction |
-| 2 | **DS** | Massive installed base; approachable unencrypted headers | NDS headers, sections, banners, save file identification |
+| 2 | **DS** | Massive installed base; approachable unencrypted headers | NDS headers/regions (partly done), FNT/FAT filesystem, banners, save identification |
 | 3 | **GB/GBC and Wii** | Very popular and widely archived | cartridge header/catalog + Wii disc/WBFS inspection |
 | 4 | **GBA and 3DS** | Popular; 3DS adds encrypted containers | GBA headers, CIA/NCSD/NCCH metadata, opt-in external keys |
 | 5 | **NES/SNES and N64** | Legacy preservation, small files | mappers, SNES headers, N64 byte orders and checksums |
@@ -30,6 +30,7 @@ Within each phase, deliver: recognition -> trustworthy metadata -> validated dir
 ## MVP exit criteria
 
 - CLI prints correct format and safe failure for invalid/truncated inputs.
+- Recursive inventory streams NDJSON without buffering complete game collections.
 - NSP/PFS0 lists entries and selectively extracts without clobbering files.
 - CI exercises good and malformed **synthetic** fixtures; repo asset audit passes.
 - Documentation accurately distinguishes detected, partially parsed, and unsupported formats.
