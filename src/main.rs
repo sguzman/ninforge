@@ -3,7 +3,7 @@
 use ninforge::cnmt::inspect_cnmt;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::package::{audit_nsp, MatchStatus, PackageAudit};
+use ninforge::package::{audit_nsp, audit_nsp_with_hashes, HashStatus, MatchStatus, PackageAudit};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -222,7 +222,7 @@ Usage:
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
   ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
-  ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--json]
+  ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--hash] [--json]
                                            Inspect NSP + explicit external metadata
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
@@ -290,6 +290,7 @@ fn report_json(report: &Report, include_entries: bool) -> String {
 #[derive(Debug, Default, PartialEq, Eq)]
 struct PackageFlags<'a> {
     json: bool,
+    hash: bool,
     nacp: Option<&'a str>,
     main_nso: Option<&'a str>,
 }
@@ -301,6 +302,10 @@ fn parse_package_flags(args: &[String]) -> Result<PackageFlags<'_>, Box<dyn std:
         match args[i].as_str() {
             "--json" if !flags.json => {
                 flags.json = true;
+                i += 1;
+            }
+            "--hash" if !flags.hash => {
+                flags.hash = true;
                 i += 1;
             }
             "--nacp" if flags.nacp.is_none() => {
@@ -337,7 +342,11 @@ fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         );
     };
     let parsed = parse_package_flags(flags)?;
-    let mut audit = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
+    let mut audit = if parsed.hash {
+        audit_nsp_with_hashes(&mut File::open(nsp)?, &mut File::open(cnmt)?)?
+    } else {
+        audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?
+    };
     if let Some(path) = parsed.nacp {
         audit.attach_nacp(&mut File::open(path)?)?;
     }
@@ -360,8 +369,9 @@ fn print_package_audit(audit: &PackageAudit) {
     println!("Content referenced: {}", audit.referenced.len());
     for content in &audit.referenced {
         println!(
-            "{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             content.status.name(),
+            content.hash_status.name(),
             content.content_type,
             content.id,
             content.expected_size,
@@ -373,6 +383,15 @@ fn print_package_audit(audit: &PackageAudit) {
         audit.count(MatchStatus::Present),
         audit.referenced.len()
     );
+    if audit.hashing_requested {
+        println!(
+            "SHA-256 matches against supplied CNMT: {} / {} (CNMT not authenticated)",
+            audit.hash_count(HashStatus::Matched),
+            audit.referenced.len()
+        );
+    } else {
+        println!("SHA-256 not checked (opt in with --hash)");
+    }
     println!("Unreferenced NCA entries: {}", audit.unreferenced_nca.len());
     for evidence in &audit.external_evidence {
         println!(
@@ -388,7 +407,7 @@ fn print_package_audit(audit: &PackageAudit) {
 
 fn package_audit_json(audit: &PackageAudit) -> String {
     let mut out = format!(
-        r#"{{"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"contents":["#,
+        r#"{{"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"hashing_requested":{},"hashes_match_supplied_cnmt":{},"hash_matched":{},"hash_mismatched":{},"hash_unavailable":{},"contents":["#,
         json_string(&audit.title_id),
         json_string(&audit.version),
         json_string(&audit.meta_type),
@@ -400,6 +419,11 @@ fn package_audit_json(audit: &PackageAudit) -> String {
         audit.count(MatchStatus::SizeMismatch),
         audit.count(MatchStatus::CompressedUnsupported),
         audit.count(MatchStatus::Ambiguous),
+        audit.hashing_requested,
+        audit.all_hashes_match_supplied_cnmt(),
+        audit.hash_count(HashStatus::Matched),
+        audit.hash_count(HashStatus::Mismatched),
+        audit.hash_count(HashStatus::Unavailable),
     );
     for (index, content) in audit.referenced.iter().enumerate() {
         if index != 0 {
@@ -407,10 +431,13 @@ fn package_audit_json(audit: &PackageAudit) -> String {
         }
         write!(
             &mut out,
-            r#"{{"id":{},"type":{},"expected_size":{},"expected_filename":{},"package_filename":{},"package_size":{},"status":{}}}"#,
+            r#"{{"id":{},"type":{},"expected_size":{},"expected_sha256":{},"actual_sha256":{},"hash_status":{},"expected_filename":{},"package_filename":{},"package_size":{},"status":{}}}"#,
             json_string(&content.id),
             json_string(content.content_type),
             content.expected_size,
+            json_string(&content.expected_sha256),
+            content.actual_sha256.as_ref().map_or("null".to_string(), |s| json_string(s)),
+            json_string(content.hash_status.name()),
             json_string(&content.expected_filename),
             content.package_filename.as_ref().map_or("null".to_string(), |s| json_string(s)),
             content.package_size.map_or("null".to_string(), |n| n.to_string()),
@@ -478,6 +505,7 @@ mod tests {
             version: "65536".into(),
             meta_type: "patch".into(),
             package_entries: 1,
+            hashing_requested: false,
             referenced: vec![ninforge::package::ContentMatch {
                 id: "0011".into(),
                 content_type: "program",
@@ -486,6 +514,9 @@ mod tests {
                 package_filename: None,
                 package_size: None,
                 status: MatchStatus::Missing,
+                expected_sha256: "00".repeat(32),
+                actual_sha256: None,
+                hash_status: HashStatus::NotChecked,
             }],
             unreferenced_nca: vec!["other.nca".into()],
             external_evidence: vec![ninforge::package::ExternalEvidence {
@@ -499,6 +530,8 @@ mod tests {
         assert!(json.contains(r#""package_filename":null"#));
         assert!(json.contains(r#""status":"missing""#));
         assert!(json.contains(r#""hashes_verified":false"#));
+        assert!(json.contains(r#""hashing_requested":false"#));
+        assert!(json.contains(r#""hash_status":"not_checked""#));
         assert!(json.contains(r#""unreferenced_nca":["other.nca"]"#));
         assert!(json.contains(r#""linked_to_package":false"#));
         assert!(json.contains(r#""provenance":"user_designated_main_unverified""#));
@@ -510,6 +543,7 @@ mod tests {
         let args = vec![
             "--main-nso".into(),
             "main.nso".into(),
+            "--hash".into(),
             "--json".into(),
             "--nacp".into(),
             "control.nacp".into(),
@@ -518,8 +552,10 @@ mod tests {
         assert_eq!(flags.nacp, Some("control.nacp"));
         assert_eq!(flags.main_nso, Some("main.nso"));
         assert!(flags.json);
+        assert!(flags.hash);
         assert!(parse_package_flags(&["--nacp".into()]).is_err());
         assert!(parse_package_flags(&["--json".into(), "--json".into()]).is_err());
+        assert!(parse_package_flags(&["--hash".into(), "--hash".into()]).is_err());
         assert!(parse_package_flags(&["--bogus".into()]).is_err());
     }
 
