@@ -44,6 +44,10 @@ Implemented: conservative one-directory sidecar discovery (`package audit-dir`) 
 
 Implemented: `ninforge titles inventory <root> --json` and explicit `--packages [--hash] [--headers]` for non-recursive, user-provided plaintext CNMT bundle collections, with optional independently available NACP titles/display versions and user-designated NSO build IDs. Groups use explicit CNMT application relationships and preserve title IDs and versions independently. Colliding metadata for the same title/version/type is reported instead of silently selected. The reported highest version is only the highest **within the supplied local dataset**, not a network lookup or trusted publisher release value. An optional exact-named package.nsp/package.xci within a bundle can be audited by name/size, NCA header and/or SHA-256 against the bundle's CNMT. Ambiguous packages fail and missing packages retain metadata-only status; no automatic filename-based game-to-title guesses. Bundle co-location alone does not authenticate executable-to-title association. No game bytes, secrets, or remote title databases are required.
 
+## Cheatarium evidence schema
+
+Implemented additive `evidence_schema_version: 1` to title-inventory `schema_version: 1` JSON. Each record reports a conservative set of categorical labels for CNMT package correspondence (metadata-only, incomplete, filename/size match, SHA-256 correspondence or conflict), NCA header consistency, duplicate-release conflicts, and external executable build-ID identity. The `automatic_cheat_match_allowed` field is always false because independently supplied NSO and CNMT files do **not** prove a verified executable-to-title association. This contract intentionally avoids a numeric "confidence" score and does not make network/release authenticity claims.
+
 ## Save inventory MVP
 
 Implemented: extension-based, read-only candidate enumeration plus explicit, non-overwriting single-file backup. **Not implemented**: automatic emulator discovery, save-file format validation, game-to-save matching, save editing, or directory-wide transactional backups. Those require separate platform adapters and adversarial tests.
