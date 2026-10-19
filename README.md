@@ -1,12 +1,12 @@
 # Ninforge
 
-A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and save backups across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency.
+A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and save backups across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency. Ninforge is a standalone Nintendo-format toolkit: it does not import, target, or control any separate application.
 
 **Current status: early format inspection and safe single-file save backups.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and HFS0 support bounded entry inspection and extraction. XCI reads the root partition and one nested HFS0 level. DS supports ROM header sections and NitroFS file-tree inspection and extraction. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
 
 ## Build
 
-Requires Rust 1.82+ (`rustup`/Cargo), Git, and no runtime dependencies:
+Requires Rust 1.82+ (`rustup`/Cargo) and Git. The CLI is standalone at runtime; Cargo resolves the pure-Rust `sha2` build dependency:
 
 ```sh
 cargo build --release
