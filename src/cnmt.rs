@@ -51,6 +51,8 @@ fn content_name(n: u8) -> &'static str {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentRecord {
     pub id: String,
+    /// CNMT's asserted SHA-256 of the referenced complete NCA; untrusted until checked.
+    pub expected_sha256: [u8; 32],
     pub size: u64,
     pub content_type: &'static str,
     pub attributes: u8,
@@ -154,6 +156,7 @@ pub fn inspect_cnmt_with_content<R: Read + Seek>(
         }
         references.push(ContentRecord {
             id: id.clone(),
+            expected_sha256: row[0..0x20].try_into().unwrap(),
             size,
             content_type: content_name(row[0x36]),
             attributes: row[0x35],
@@ -161,6 +164,7 @@ pub fn inspect_cnmt_with_content<R: Read + Seek>(
         });
         let name = format!("content_{i}");
         add(&mut report, format!("{name}_id"), id);
+        add(&mut report, format!("{name}_sha256"), hex(&row[0..0x20]));
         add(&mut report, format!("{name}_size"), size);
         add(&mut report, format!("{name}_attributes"), row[0x35]);
         add(&mut report, format!("{name}_type"), content_name(row[0x36]));
@@ -238,6 +242,7 @@ mod tests {
         assert_eq!(content[0].size, 4660);
         assert_eq!(content[0].attributes, 0xa4);
         assert_eq!(content[0].content_type, "program");
+        assert_eq!(content[0].expected_sha256, [0u8; 32]);
         assert_eq!(content[0].id, "000102030405060708090A0B0C0D0E0F");
         assert!(report
             .metadata
