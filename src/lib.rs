@@ -429,8 +429,13 @@ mod tests {
     #[test]
     fn pfs0_refuses_paths_traversal_and_control_characters() {
         for name in [
-            ".", "..", "../outside.nca", "dir/inside.nca",
-            "dir\\inside.nca", "control\nname.nca", "carriage\rreturn.nca",
+            ".",
+            "..",
+            "../outside.nca",
+            "dir/inside.nca",
+            "dir\\inside.nca",
+            "control\nname.nca",
+            "carriage\rreturn.nca",
         ] {
             let bytes = synthetic_pfs0(name, b"safe fixture");
             assert_eq!(
