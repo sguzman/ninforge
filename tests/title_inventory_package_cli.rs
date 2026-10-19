@@ -15,10 +15,14 @@ const NCA_NAME: &str = "11111111111111111111111111111111.nca";
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let path = std::env::temp_dir().join(format!(
             "ninforge-inventory-package-{}-{ns}-{}",
-            std::process::id(), SERIAL.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
         Self(path)
@@ -34,7 +38,9 @@ impl Fixture {
         cnmt[0x10..0x12].copy_from_slice(&1u16.to_le_bytes());
         cnmt[0x30..0x50].copy_from_slice(&Sha256::digest(expected));
         cnmt[0x50..0x60].copy_from_slice(&CONTENT_ID);
-        for j in 0..5 { cnmt[0x60 + j] = (expected.len() as u64 >> (8*j)) as u8; }
+        for j in 0..5 {
+            cnmt[0x60 + j] = (expected.len() as u64 >> (8 * j)) as u8;
+        }
         cnmt[0x66] = 1; // Program
         fs::write(dir.join("metadata.cnmt"), cnmt).unwrap();
         if let Some(payload) = actual {
@@ -52,12 +58,14 @@ impl Fixture {
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 fn nsp(payload: &[u8]) -> Vec<u8> {
     let mut file = b"PFS0".to_vec();
     file.extend(1u32.to_le_bytes());
-    file.extend(((NCA_NAME.len()+1) as u32).to_le_bytes());
+    file.extend(((NCA_NAME.len() + 1) as u32).to_le_bytes());
     file.extend(0u32.to_le_bytes());
     file.extend(0u64.to_le_bytes());
     file.extend((payload.len() as u64).to_le_bytes());
@@ -69,9 +77,9 @@ fn nsp(payload: &[u8]) -> Vec<u8> {
     file
 }
 fn readable_nca() -> Vec<u8> {
-    let mut data=vec![0u8;0xc00];
+    let mut data = vec![0u8; 0xc00];
     data[0x200..0x204].copy_from_slice(b"NCA3");
-    data[0x205]=0;
+    data[0x205] = 0;
     data[0x208..0x210].copy_from_slice(&0xc00u64.to_le_bytes());
     data[0x210..0x218].copy_from_slice(&0x0100_1234_5678_8000u64.to_le_bytes());
     data
@@ -79,12 +87,16 @@ fn readable_nca() -> Vec<u8> {
 
 #[test]
 fn default_inventory_never_opens_designated_game_package() {
-    let f=Fixture::new();
-    let bytes=readable_nca();
-    f.add_bundle("demo",&bytes,Some(&bytes));
-    let result=f.run(&["--json"]);
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-    let text=String::from_utf8(result.stdout).unwrap();
+    let f = Fixture::new();
+    let bytes = readable_nca();
+    f.add_bundle("demo", &bytes, Some(&bytes));
+    let result = f.run(&["--json"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let text = String::from_utf8(result.stdout).unwrap();
     assert!(text.contains(r#""package_audits_requested":false"#));
     assert!(text.contains(r#""packages_audited":0"#));
     assert!(text.contains(r#""package_audit":null"#));
@@ -93,12 +105,16 @@ fn default_inventory_never_opens_designated_game_package() {
 
 #[test]
 fn explicit_package_check_matches_sha_and_header_structurally() {
-    let f=Fixture::new();
-    let bytes=readable_nca();
-    f.add_bundle("demo",&bytes,Some(&bytes));
-    let result=f.run(&["--packages","--hash","--headers","--json"]);
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-    let text=String::from_utf8(result.stdout).unwrap();
+    let f = Fixture::new();
+    let bytes = readable_nca();
+    f.add_bundle("demo", &bytes, Some(&bytes));
+    let result = f.run(&["--packages", "--hash", "--headers", "--json"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let text = String::from_utf8(result.stdout).unwrap();
     assert!(text.contains(r#""packages_audited":1"#));
     assert!(text.contains(r#""package_filename":"package.nsp""#));
     assert!(text.contains(r#""package_format":"Switch NSP/PFS0""#));
@@ -112,11 +128,15 @@ fn explicit_package_check_matches_sha_and_header_structurally() {
 
 #[test]
 fn identical_size_modified_content_stays_unverified() {
-    let f=Fixture::new();
-    f.add_bundle("demo",b"abc",Some(b"abd"));
-    let result=f.run(&["--packages","--hash","--json"]);
-    assert!(result.status.success(), "{}",String::from_utf8_lossy(&result.stderr));
-    let text=String::from_utf8(result.stdout).unwrap();
+    let f = Fixture::new();
+    f.add_bundle("demo", b"abc", Some(b"abd"));
+    let result = f.run(&["--packages", "--hash", "--json"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let text = String::from_utf8(result.stdout).unwrap();
     assert!(text.contains(r#""complete_by_size":true"#));
     assert!(text.contains(r#""hash_status":"mismatched""#));
     assert!(text.contains(r#""hashes_match_supplied_cnmt":false"#));
@@ -125,24 +145,27 @@ fn identical_size_modified_content_stays_unverified() {
 
 #[test]
 fn missing_package_is_metadata_only_and_bad_flags_fail() {
-    let f=Fixture::new();
-    f.add_bundle("demo",b"abc",None);
-    let result=f.run(&["--packages","--hash","--json"]);
+    let f = Fixture::new();
+    f.add_bundle("demo", b"abc", None);
+    let result = f.run(&["--packages", "--hash", "--json"]);
     assert!(result.status.success());
-    let text=String::from_utf8(result.stdout).unwrap();
+    let text = String::from_utf8(result.stdout).unwrap();
     assert!(text.contains(r#""packages_missing":1"#));
     assert!(text.contains(r#""package_audit":null"#));
-    assert!(!f.run(&["--hash","--json"]).status.success());
-    assert!(!f.run(&["--headers","--json"]).status.success());
-    assert!(!f.run(&["--packages","--packages","--json"]).status.success());
+    assert!(!f.run(&["--hash", "--json"]).status.success());
+    assert!(!f.run(&["--headers", "--json"]).status.success());
+    assert!(!f
+        .run(&["--packages", "--packages", "--json"])
+        .status
+        .success());
 }
 
 #[test]
 fn ambiguous_designated_packages_fail_without_choosing_one() {
-    let f=Fixture::new();
-    let dir=f.add_bundle("demo",b"abc",Some(b"abc"));
-    fs::write(dir.join("package.xci"),b"fake").unwrap();
-    let result=f.run(&["--packages","--json"]);
+    let f = Fixture::new();
+    let dir = f.add_bundle("demo", b"abc", Some(b"abc"));
+    fs::write(dir.join("package.xci"), b"fake").unwrap();
+    let result = f.run(&["--packages", "--json"]);
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("multiple designated packages"));
     assert!(result.stdout.is_empty());
@@ -152,12 +175,12 @@ fn ambiguous_designated_packages_fail_without_choosing_one() {
 #[test]
 fn package_symlink_is_rejected_when_audit_is_requested() {
     use std::os::unix::fs::symlink;
-    let f=Fixture::new();
-    let dir=f.add_bundle("demo",b"abc",None);
+    let f = Fixture::new();
+    let dir = f.add_bundle("demo", b"abc", None);
     let remote: &Path = &f.0.join("remote");
     fs::write(remote, b"synthetic").unwrap();
-    symlink(remote,dir.join("package.nsp")).unwrap();
-    let result=f.run(&["--packages","--json"]);
+    symlink(remote, dir.join("package.nsp")).unwrap();
+    let result = f.run(&["--packages", "--json"]);
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("non-symlink"));
 }

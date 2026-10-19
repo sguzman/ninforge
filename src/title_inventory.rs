@@ -9,7 +9,10 @@
 use crate::cnmt::inspect_cnmt_with_content;
 use crate::metadata_dir::discover_metadata_dir;
 use crate::nacp::inspect_nacp;
-use crate::package::{audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers, PackageAudit};
+use crate::package::{
+    audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
+    PackageAudit,
+};
 use crate::{inspect, Format};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -97,7 +100,9 @@ fn discover_designated_package(directory: &Path) -> io::Result<Option<(PathBuf, 
     let mut found = None;
     for (count, entry) in fs::read_dir(directory)?.enumerate() {
         if count >= MAX_ITEMS {
-            return Err(invalid("bundle directory exceeds package-discovery safety limit"));
+            return Err(invalid(
+                "bundle directory exceeds package-discovery safety limit",
+            ));
         }
         let entry = entry?;
         let name = entry.file_name();
@@ -108,12 +113,15 @@ fn discover_designated_package(directory: &Path) -> io::Result<Option<(PathBuf, 
             continue;
         }
         if !entry.file_type()?.is_file() {
-            return Err(invalid("designated package is not a regular non-symlink file"));
+            return Err(invalid(
+                "designated package is not a regular non-symlink file",
+            ));
         }
         if found.is_some() {
             return Err(invalid("multiple designated packages in one bundle"));
         }
-        let filename = name.into_string()
+        let filename = name
+            .into_string()
             .map_err(|_| invalid("designated package filename is not UTF-8"))?;
         found = Some((entry.path(), filename));
     }
@@ -239,7 +247,9 @@ pub fn inventory_metadata_root_with_packages(
     inspect_headers: bool,
 ) -> io::Result<TitleInventory> {
     if (verify_hashes || inspect_headers) && !check_packages {
-        return Err(invalid("hash/header options require explicit package auditing"));
+        return Err(invalid(
+            "hash/header options require explicit package auditing",
+        ));
     }
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
         return Err(invalid("inventory root must be an ordinary directory"));
@@ -272,7 +282,13 @@ pub fn inventory_metadata_root_with_packages(
     let mut groups: BTreeMap<String, Vec<TitleRecord>> = BTreeMap::new();
     let mut packages_audited = 0;
     for (name, path) in &dirs {
-        let record = read_record(path, name.clone(), check_packages, verify_hashes, inspect_headers)?;
+        let record = read_record(
+            path,
+            name.clone(),
+            check_packages,
+            verify_hashes,
+            inspect_headers,
+        )?;
         packages_audited += usize::from(record.package_audit.is_some());
         groups
             .entry(record.application_group_id.clone())
@@ -338,7 +354,11 @@ pub fn inventory_metadata_root_with_packages(
         bundles_scanned: dirs.len(),
         package_audits_requested: check_packages,
         packages_audited,
-        packages_missing: if check_packages { dirs.len() - packages_audited } else { 0 },
+        packages_missing: if check_packages {
+            dirs.len() - packages_audited
+        } else {
+            0
+        },
         groups: result,
         version_collisions: versions,
     })

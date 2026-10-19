@@ -571,7 +571,6 @@ fn package_audit_json(audit: &PackageAudit) -> String {
     out
 }
 
-
 #[derive(Default, Debug)]
 struct TitleInventoryFlags {
     packages: bool,
@@ -588,7 +587,11 @@ fn parse_title_inventory_flags(args: &[String]) -> Result<TitleInventoryFlags, S
             "--hash" if !flags.hash => flags.hash = true,
             "--headers" if !flags.headers => flags.headers = true,
             "--json" if !flags.json => flags.json = true,
-            _ => return Err(format!("unknown or repeated titles inventory option: {option}")),
+            _ => {
+                return Err(format!(
+                    "unknown or repeated titles inventory option: {option}"
+                ))
+            }
         }
     }
     if (flags.hash || flags.headers) && !flags.packages {
@@ -599,11 +602,17 @@ fn parse_title_inventory_flags(args: &[String]) -> Result<TitleInventoryFlags, S
 
 fn run_titles_inventory(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [root, flags @ ..] = args else {
-        return Err("usage: ninforge titles inventory <root> [--packages] [--hash] [--headers] [--json]".into());
+        return Err(
+            "usage: ninforge titles inventory <root> [--packages] [--hash] [--headers] [--json]"
+                .into(),
+        );
     };
     let flags = parse_title_inventory_flags(flags)?;
     let catalog = inventory_metadata_root_with_packages(
-        Path::new(root), flags.packages, flags.hash, flags.headers
+        Path::new(root),
+        flags.packages,
+        flags.hash,
+        flags.headers,
     )?;
     if flags.json {
         println!("{}", title_inventory_json(&catalog));
@@ -617,8 +626,14 @@ fn print_title_inventory(catalog: &TitleInventory) {
     println!("External metadata bundles: {}", catalog.bundles_scanned);
     println!("Claimed application groups: {}", catalog.groups.len());
     if catalog.package_audits_requested {
-        println!("Designated NSP/XCI packages audited: {}", catalog.packages_audited);
-        println!("Bundles without designated package: {}", catalog.packages_missing);
+        println!(
+            "Designated NSP/XCI packages audited: {}",
+            catalog.packages_audited
+        );
+        println!(
+            "Bundles without designated package: {}",
+            catalog.packages_missing
+        );
     }
     println!(
         "Duplicate title/version/type sets: {}",
