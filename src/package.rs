@@ -377,7 +377,7 @@ fn compare_header<R: Read + Seek>(
     archive.seek(SeekFrom::Start(entry.offset))?;
     let mut raw = [0u8; 0x400];
     archive.read_exact(&mut raw)?;
-    if !matches!(&raw[0x200..0x204], b"NCA2" | b"NCA3") {
+    if &raw[0x200..0x204] != b"NCA2" && &raw[0x200..0x204] != b"NCA3" {
         result.header_status = HeaderStatus::Unavailable;
         return Ok(());
     }
