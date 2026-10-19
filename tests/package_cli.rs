@@ -65,6 +65,17 @@ impl Fixture {
         }
     }
 
+    fn audit_dir(&self, flags: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_ninforge"))
+            .arg("package")
+            .arg("audit-dir")
+            .arg(&self.nsp)
+            .arg(&self.directory)
+            .args(flags)
+            .output()
+            .unwrap()
+    }
+
     fn audit(&self, flags: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_ninforge"))
             .arg("package")
@@ -123,4 +134,54 @@ fn cli_default_does_not_hash_and_duplicate_flag_is_an_error() {
     let invalid = fixture.audit(&["--hash", "--hash", "--json"]);
     assert!(!invalid.status.success());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("package option"));
+}
+
+#[test]
+fn cli_auto_discovers_plaintext_cnmt_and_hashes_without_extra_paths() {
+    let fixture = Fixture::new(b"abc", b"abc");
+    let output = fixture.audit_dir(&["--hash", "--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""hash_status":"matched""#));
+    assert!(json.contains(r#""hashes_match_supplied_cnmt":true"#));
+    assert!(json.contains(r#""external_evidence":[]"#));
+    assert!(json.contains(r#""metadata_source":"external_cnmt_unverified""#));
+}
+
+#[test]
+fn cli_auto_attaches_unverified_nacp_and_designated_main_nso() {
+    let fixture = Fixture::new(b"abc", b"abc");
+    let mut nacp = vec![0u8; 0x4000];
+    nacp[..14].copy_from_slice(b"Synthetic Demo");
+    fs::write(fixture.directory.join("control.nacp"), nacp).unwrap();
+    let mut nso = vec![0u8; 0x100];
+    nso[..4].copy_from_slice(b"NSO0");
+    nso[0x40..0x48].copy_from_slice(&[1,2,3,4,5,6,7,8]);
+    fs::write(fixture.directory.join("main.nso"), nso).unwrap();
+    // There can be other libraries; do not select one as the main executable.
+    fs::write(fixture.directory.join("sdk.nso"), b"unrelated").unwrap();
+    let output = fixture.audit_dir(&["--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""title_american_english":"Synthetic Demo""#));
+    assert!(json.contains(r#""atmosphere_cheat_build_id":"0102030405060708""#));
+    assert!(json.contains(r#""linked_to_package":false"#));
+    assert!(json.contains(r#""provenance":"user_designated_main_unverified""#));
+}
+
+#[test]
+fn cli_auto_rejects_ambiguous_plaintext_cnmt_without_guessing() {
+    let fixture = Fixture::new(b"abc", b"abc");
+    fs::write(fixture.directory.join("other.cnmt"), b"not a CNMT").unwrap();
+    let result = fixture.audit_dir(&["--json"]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("multiple CNMT"));
+    assert!(result.stdout.is_empty());
+}
+
+#[test]
+fn cli_auto_rejects_explicit_sidecar_flags_and_unexpected_flags() {
+    let fixture = Fixture::new(b"abc", b"abc");
+    assert!(!fixture.audit_dir(&["--nacp", "somewhere.nacp"]).status.success());
+    assert!(!fixture.audit_dir(&["--bogus"]).status.success());
 }
