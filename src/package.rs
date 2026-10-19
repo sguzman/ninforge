@@ -6,6 +6,7 @@
 //! an encrypted metadata NCA and is not directly readable as a top-level file.
 
 use crate::cnmt::{inspect_cnmt_with_content, ContentRecord};
+use crate::nacp::inspect_nacp;
 use crate::{inspect, Entry, Format};
 use std::collections::HashSet;
 use std::io::{self, ErrorKind, Read, Seek};
@@ -46,6 +47,15 @@ pub struct ContentMatch {
 }
 
 #[derive(Debug, Clone)]
+/// Metadata from a separately supplied, independently parsed file.
+/// Attribution to the audited NSP is NEVER established by this structure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalEvidence {
+    pub kind: &'static str,
+    pub provenance: &'static str,
+    pub fields: Vec<(String, String)>,
+}
+
 pub struct PackageAudit {
     /// These title/version fields come from an independently supplied,
     /// *unverified* plaintext CNMT, not directly from the NSP.
@@ -55,6 +65,7 @@ pub struct PackageAudit {
     pub package_entries: usize,
     pub referenced: Vec<ContentMatch>,
     pub unreferenced_nca: Vec<String>,
+    pub external_evidence: Vec<ExternalEvidence>,
 }
 impl PackageAudit {
     pub fn count(&self, status: MatchStatus) -> usize {
@@ -65,6 +76,39 @@ impl PackageAudit {
     }
     pub fn complete_by_size(&self) -> bool {
         !self.referenced.is_empty() && self.count(MatchStatus::Present) == self.referenced.len()
+    }
+
+    /// Read a separately obtained NACP, preserving its identity as unverified
+    /// external metadata. Display versions are NOT equivalent to CNMT versions.
+    pub fn attach_nacp<R: Read + Seek>(&mut self, nacp: &mut R) -> io::Result<()> {
+        if self.external_evidence.iter().any(|item| item.kind == "nacp") {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "NACP already attached"));
+        }
+        let report = inspect_nacp(nacp)?;
+        self.external_evidence.push(ExternalEvidence {
+            kind: "nacp",
+            provenance: "user_supplied_unverified",
+            fields: report.metadata,
+        });
+        Ok(())
+    }
+
+    /// Read an explicitly user-designated main NSO. A build ID identifies an
+    /// executable, not the title; no automatic association is inferred.
+    pub fn attach_main_nso<R: Read + Seek>(&mut self, nso: &mut R) -> io::Result<()> {
+        if self.external_evidence.iter().any(|item| item.kind == "main_nso") {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "main NSO already attached"));
+        }
+        let report = inspect(nso)?;
+        if report.format != Format::SwitchNso {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "expected readable NSO0 executable"));
+        }
+        self.external_evidence.push(ExternalEvidence {
+            kind: "main_nso",
+            provenance: "user_designated_main_unverified",
+            fields: report.metadata,
+        });
+        Ok(())
     }
 }
 
@@ -120,6 +164,7 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
         package_entries: package.entries.len(),
         referenced: matches,
         unreferenced_nca,
+        external_evidence: Vec::new(),
     })
 }
 
@@ -286,6 +331,65 @@ mod tests {
         );
         let archive = nsp(&[]);
         assert!(audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(vec![0u8; 128])).is_err());
+    }
+
+
+    fn synthetic_nacp(title: &str, display_version: &str) -> Vec<u8> {
+        let mut bytes = vec![0u8; 0x4000];
+        bytes[..title.len()].copy_from_slice(title.as_bytes());
+        bytes[0x3060..0x3060 + display_version.len()]
+            .copy_from_slice(display_version.as_bytes());
+        bytes
+    }
+
+    fn synthetic_nso() -> Vec<u8> {
+        let mut bytes = vec![0u8; 0x100];
+        bytes[..4].copy_from_slice(b"NSO0");
+        bytes[0x40..0x48].copy_from_slice(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
+        bytes
+    }
+
+    #[test]
+    fn attaches_explicit_metadata_without_claiming_title_attribution() {
+        let archive = nsp(&[("11111111111111111111111111111111.nca", b"four")]);
+        let refs = cnmt(&[(CONTENT_A, 4, 1)]);
+        let mut audit = audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(refs)).unwrap();
+        audit.attach_nacp(&mut Cursor::new(synthetic_nacp("Sample", "1.2.3"))).unwrap();
+        audit.attach_main_nso(&mut Cursor::new(synthetic_nso())).unwrap();
+        assert!(audit.complete_by_size());
+        assert_eq!(audit.external_evidence.len(), 2);
+        assert_eq!(audit.external_evidence[0].provenance, "user_supplied_unverified");
+        assert_eq!(audit.external_evidence[1].provenance, "user_designated_main_unverified");
+        assert!(audit.external_evidence[0].fields.contains(
+            &("title_american_english".into(), "Sample".into())
+        ));
+        assert!(audit.external_evidence[0].fields.contains(
+            &("display_version".into(), "1.2.3".into())
+        ));
+        assert!(audit.external_evidence[1].fields.contains(
+            &("atmosphere_cheat_build_id".into(), "123456789ABCDEF0".into())
+        ));
+        assert_eq!(audit.title_id, "0100123456789000");
+        assert_eq!(audit.version, "65536");
+    }
+
+    #[test]
+    fn rejects_non_nso_and_malformed_nacp_evidence() {
+        let archive = nsp(&[]);
+        let refs = cnmt(&[(CONTENT_A, 4, 1)]);
+        let mut audit = audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(refs)).unwrap();
+        assert_eq!(
+            audit.attach_main_nso(&mut Cursor::new(vec![0u8; 0x100])).unwrap_err().kind(),
+            ErrorKind::InvalidInput
+        );
+        assert!(audit.external_evidence.is_empty());
+        assert!(audit.attach_nacp(&mut Cursor::new(vec![0u8; 0x4000])).is_err());
+        assert!(audit.external_evidence.is_empty());
+        audit.attach_main_nso(&mut Cursor::new(synthetic_nso())).unwrap();
+        assert_eq!(
+            audit.attach_main_nso(&mut Cursor::new(synthetic_nso())).unwrap_err().kind(),
+            ErrorKind::InvalidInput
+        );
     }
 
     #[test]
