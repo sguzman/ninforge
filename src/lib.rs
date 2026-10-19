@@ -136,8 +136,14 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.format = Format::SwitchNso;
         let id = &head[0x40..0x60];
         if id.iter().any(|byte| *byte != 0) {
-            let full = id.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
-            let short = id[..8].iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+            let full = id
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>();
+            let short = id[..8]
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>();
             report.add("module_build_id", full);
             report.add("atmosphere_cheat_build_id", short);
         } else {
@@ -476,8 +482,14 @@ mod tests {
         bytes[0x40..0x48].copy_from_slice(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
         let result = report(bytes).unwrap();
         assert_eq!(result.format, Format::SwitchNso);
-        assert!(result.metadata.contains(&("atmosphere_cheat_build_id".into(), "123456789ABCDEF0".into())));
-        assert!(result.metadata.iter().any(|(key, value)| key == "module_build_id" && value.len() == 64));
+        assert!(result.metadata.contains(&(
+            "atmosphere_cheat_build_id".into(),
+            "123456789ABCDEF0".into()
+        )));
+        assert!(result
+            .metadata
+            .iter()
+            .any(|(key, value)| key == "module_build_id" && value.len() == 64));
     }
 
     #[test]
@@ -485,8 +497,13 @@ mod tests {
         let mut bytes = vec![0u8; 0x100];
         bytes[..4].copy_from_slice(b"NSO0");
         let result = report(bytes).unwrap();
-        assert!(result.metadata.contains(&("build_id_available".into(), "false".into())));
-        assert!(!result.metadata.iter().any(|(key, _)| key == "atmosphere_cheat_build_id"));
+        assert!(result
+            .metadata
+            .contains(&("build_id_available".into(), "false".into())));
+        assert!(!result
+            .metadata
+            .iter()
+            .any(|(key, _)| key == "atmosphere_cheat_build_id"));
     }
 
     #[test]
