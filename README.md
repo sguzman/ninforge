@@ -26,6 +26,7 @@ ninforge list ./game.nsp --json
 ninforge list ./game.hfs0
 ninforge list ./game.xci --json
 ninforge extract ./game.xci root/secure/example.nca ./example.nca
+ninforge nacp info ./control.nacp --json
 ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
 ninforge list ./game.nds
@@ -38,6 +39,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
+- `nacp info` reads a separately obtained, unencrypted 0x4000-byte control.nacp and exposes localized titles, publishers, display version and selected ID fields. NACP has no unique signature, so inspection is **explicit**; compressed title tables introduced in newer firmware are rejected until supported.
 - `list` enumerates PFS0/HFS0/XCI entries or header-defined DS regions (ARM9/ARM7, FNT/FAT, overlay tables). DS header section labels are synthetic; separate `nitrofs/` entries are the actual DS filesystem paths. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
 - `verify` validates PFS0/HFS0/XCI entry names and structural bounds, or DS section and NitroFS file bounds. HFS0 SHA-256 hashes are not verified. It is **not** a content hash check, signature check, or authenticity guarantee.
 - `extract` writes **one specified** PFS0/HFS0/XCI entry, DS section or NitroFS file to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
@@ -49,6 +51,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 
 - `src/lib.rs`: format identification, metadata, bounded PFS0 directory parsing, streaming extraction.
 - `src/hfs0.rs`: bounded standalone HFS0 and XCI partition indexing.
+- `src/nacp.rs`: standalone NACP metadata inspection; no decryption or game file extraction.
 - `src/nds.rs`: header-declared DS regions and bounded FNT/FAT NitroFS traversal.
 - `src/saves.rs`: generic save candidate inventory and no-overwrite, file-by-file backup; no save editing or credentials.
 - `src/main.rs`: thin CLI presentation layer; no format-specific data logic.

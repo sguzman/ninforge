@@ -23,3 +23,7 @@ Synthetic byte strings only: candidate extensions, nested directories, no-overwr
 ## Switch HFS0 and XCI
 
 Synthetic HFS0 entries and a nested XCI root partition are generated in memory. Negative tests reject unsafe filenames, impossible hash spans and truncated data. SHA-256 values and XCI signatures are **not** verified.
+
+## Switch control.nacp
+
+Tests synthesize only unencrypted 0x4000-byte control metadata with fictional homebrew strings. Parsing fails closed on missing titles, invalid UTF-8, truncation and compressed or unknown title-table encodings. No keys or real title assets are needed.

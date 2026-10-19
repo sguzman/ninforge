@@ -5,6 +5,7 @@
 
 mod nds;
 mod hfs0;
+pub mod nacp;
 pub mod saves;
 
 use std::collections::HashSet;
@@ -19,6 +20,7 @@ const MAX_PFS0_STRINGS: u32 = 16 * 1024 * 1024;
 pub enum Format {
     SwitchNsp,
     SwitchHfs0,
+    SwitchNacp,
     SwitchXci,
     SwitchNca,
     Nintendo3dsCartridge,
@@ -38,6 +40,7 @@ impl Format {
         match self {
             Self::SwitchNsp => "Switch NSP/PFS0",
             Self::SwitchHfs0 => "Switch HFS0",
+            Self::SwitchNacp => "Switch control.nacp",
             Self::SwitchXci => "Switch XCI",
             Self::SwitchNca => "Switch NCA (readable header)",
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
@@ -55,7 +58,7 @@ impl Format {
 
     pub fn console(self) -> &'static str {
         match self {
-            Self::SwitchNsp | Self::SwitchHfs0 | Self::SwitchXci | Self::SwitchNca => "switch",
+            Self::SwitchNsp | Self::SwitchHfs0 | Self::SwitchNacp | Self::SwitchXci | Self::SwitchNca => "switch",
             Self::Nintendo3dsCartridge => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii => "wii",
