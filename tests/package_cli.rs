@@ -140,7 +140,11 @@ fn cli_default_does_not_hash_and_duplicate_flag_is_an_error() {
 fn cli_auto_discovers_plaintext_cnmt_and_hashes_without_extra_paths() {
     let fixture = Fixture::new(b"abc", b"abc");
     let output = fixture.audit_dir(&["--hash", "--json"]);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""hash_status":"matched""#));
     assert!(json.contains(r#""hashes_match_supplied_cnmt":true"#));
@@ -156,12 +160,16 @@ fn cli_auto_attaches_unverified_nacp_and_designated_main_nso() {
     fs::write(fixture.directory.join("control.nacp"), nacp).unwrap();
     let mut nso = vec![0u8; 0x100];
     nso[..4].copy_from_slice(b"NSO0");
-    nso[0x40..0x48].copy_from_slice(&[1,2,3,4,5,6,7,8]);
+    nso[0x40..0x48].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
     fs::write(fixture.directory.join("main.nso"), nso).unwrap();
     // There can be other libraries; do not select one as the main executable.
     fs::write(fixture.directory.join("sdk.nso"), b"unrelated").unwrap();
     let output = fixture.audit_dir(&["--json"]);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""title_american_english":"Synthetic Demo""#));
     assert!(json.contains(r#""atmosphere_cheat_build_id":"0102030405060708""#));
@@ -182,6 +190,9 @@ fn cli_auto_rejects_ambiguous_plaintext_cnmt_without_guessing() {
 #[test]
 fn cli_auto_rejects_explicit_sidecar_flags_and_unexpected_flags() {
     let fixture = Fixture::new(b"abc", b"abc");
-    assert!(!fixture.audit_dir(&["--nacp", "somewhere.nacp"]).status.success());
+    assert!(!fixture
+        .audit_dir(&["--nacp", "somewhere.nacp"])
+        .status
+        .success());
     assert!(!fixture.audit_dir(&["--bogus"]).status.success());
 }

@@ -1,9 +1,9 @@
 //! Standalone binary for the Ninforge library. Pure std: no runtime dependencies.
 
 use ninforge::cnmt::inspect_cnmt;
+use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::package::{audit_nsp, audit_nsp_with_hashes, HashStatus, MatchStatus, PackageAudit};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
@@ -363,7 +363,6 @@ fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-
 fn load_package_audit(
     nsp: &Path,
     cnmt: &Path,
@@ -383,13 +382,15 @@ fn load_package_audit(
 fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [nsp, metadata_dir, flags @ ..] = args else {
         return Err(
-            "usage: ninforge package audit-dir <nsp> <metadata-dir> [--hash] [--json]"
-                .into(),
+            "usage: ninforge package audit-dir <nsp> <metadata-dir> [--hash] [--json]".into(),
         );
     };
     let parsed = parse_package_flags(flags)?;
     if parsed.nacp.is_some() || parsed.main_nso.is_some() {
-        return Err("audit-dir discovers metadata; use 'package audit' for explicit --nacp/--main-nso".into());
+        return Err(
+            "audit-dir discovers metadata; use 'package audit' for explicit --nacp/--main-nso"
+                .into(),
+        );
     }
     let sidecars = discover_metadata_dir(Path::new(metadata_dir))?;
     let mut audit = load_package_audit(Path::new(nsp), &sidecars.cnmt, parsed.hash)?;

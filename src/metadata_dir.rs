@@ -36,7 +36,9 @@ fn unique(mut candidates: Vec<PathBuf>, multiple: &'static str) -> io::Result<Op
 /// follow symbolic links or choose between multiple CNMT/NACP files.
 pub fn discover_metadata_dir(root: &Path) -> io::Result<MetadataBundle> {
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
-        return Err(invalid("metadata root must be an ordinary directory, not a symlink"));
+        return Err(invalid(
+            "metadata root must be an ordinary directory, not a symlink",
+        ));
     }
     let mut cnmt = Vec::new();
     let mut nacp = Vec::new();
@@ -59,7 +61,9 @@ pub fn discover_metadata_dir(root: &Path) -> io::Result<MetadataBundle> {
         // Reject candidate symlinks rather than silently following or ignoring
         // a different metadata file chosen by filename.
         if !item.file_type()?.is_file() {
-            return Err(invalid("metadata candidate is not a regular, non-symlink file"));
+            return Err(invalid(
+                "metadata candidate is not a regular, non-symlink file",
+            ));
         }
         if is_cnmt {
             cnmt.push(path);
@@ -69,11 +73,17 @@ pub fn discover_metadata_dir(root: &Path) -> io::Result<MetadataBundle> {
             main_nso.push(path);
         }
     }
-    let cnmt = unique(cnmt, "multiple CNMT files: choose one explicitly with package audit")?
-        .ok_or_else(|| invalid("no standalone plaintext .cnmt found in metadata directory"))?;
+    let cnmt = unique(
+        cnmt,
+        "multiple CNMT files: choose one explicitly with package audit",
+    )?
+    .ok_or_else(|| invalid("no standalone plaintext .cnmt found in metadata directory"))?;
     Ok(MetadataBundle {
         cnmt,
-        nacp: unique(nacp, "multiple NACP files: choose one explicitly with package audit")?,
+        nacp: unique(
+            nacp,
+            "multiple NACP files: choose one explicitly with package audit",
+        )?,
         main_nso: unique(main_nso, "ambiguous case-variant main.nso files")?,
     })
 }
@@ -87,10 +97,14 @@ mod tests {
     struct Temp(PathBuf);
     impl Temp {
         fn new() -> Self {
-            let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             let number = NEXT.fetch_add(1, Ordering::Relaxed);
             let root = std::env::temp_dir().join(format!(
-                "ninforge-metadata-{nonce}-{}-{number}", std::process::id()
+                "ninforge-metadata-{nonce}-{}-{number}",
+                std::process::id()
             ));
             fs::create_dir(&root).unwrap();
             Self(root)
@@ -100,7 +114,9 @@ mod tests {
         }
     }
     impl Drop for Temp {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -132,11 +148,17 @@ mod tests {
         let temp = Temp::new();
         temp.add("a.cnmt");
         temp.add("b.CNMT");
-        assert!(discover_metadata_dir(&temp.0).unwrap_err().to_string().contains("multiple CNMT"));
+        assert!(discover_metadata_dir(&temp.0)
+            .unwrap_err()
+            .to_string()
+            .contains("multiple CNMT"));
         fs::remove_file(temp.0.join("b.CNMT")).unwrap();
         temp.add("control.nacp");
         temp.add("second.nacp");
-        assert!(discover_metadata_dir(&temp.0).unwrap_err().to_string().contains("multiple NACP"));
+        assert!(discover_metadata_dir(&temp.0)
+            .unwrap_err()
+            .to_string()
+            .contains("multiple NACP"));
     }
 
     #[test]
@@ -154,7 +176,10 @@ mod tests {
         fs::write(temp.0.join("other/meta.cnmt"), b"synthetic").unwrap();
         assert!(discover_metadata_dir(&temp.0).is_err());
         temp.add("root.cnmt");
-        assert_eq!(discover_metadata_dir(&temp.0).unwrap().cnmt, temp.0.join("root.cnmt"));
+        assert_eq!(
+            discover_metadata_dir(&temp.0).unwrap().cnmt,
+            temp.0.join("root.cnmt")
+        );
     }
 
     #[cfg(unix)]

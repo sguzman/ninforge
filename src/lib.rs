@@ -5,11 +5,11 @@
 
 pub mod cnmt;
 mod hfs0;
+pub mod metadata_dir;
 pub mod nacp;
 pub mod nca;
 mod nds;
 pub mod package;
-pub mod metadata_dir;
 pub mod saves;
 
 use std::collections::HashSet;
