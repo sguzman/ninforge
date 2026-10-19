@@ -31,3 +31,7 @@ Tests synthesize only unencrypted 0x4000-byte control metadata with fictional ho
 ## Switch NSO and cheat ID
 
 A synthetic NSO0 header verifies that the Atmosphère cheat ID uses the first eight bytes of the module build ID. A zero-filled ID reports explicit unavailability.
+
+## NCA and CNMT
+
+Synthetic test headers only: keyless/decrypted NCA headers with content type, title/program ID, section bounds, and invalid overlapping or oversized sections; plaintext CNMT files with title ID, version, patch relation, referenced content IDs, malformed counts and truncation. No keys, retail NCAs or game data are stored. No cryptographic validation is claimed.

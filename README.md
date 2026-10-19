@@ -28,6 +28,8 @@ ninforge list ./game.xci --json
 ninforge extract ./game.xci root/secure/example.nca ./example.nca
 ninforge nacp info ./control.nacp --json
 ninforge info ./main.nso --json
+ninforge nca info ./decrypted-header.bin --json
+ninforge cnmt info ./meta.cnmt --json
 ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
 ninforge list ./game.nds
@@ -40,6 +42,8 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
+- `nca info` accepts an explicitly supplied readable/decrypted NCA2 or NCA3 header (or full archive with plaintext header). Reports content type, program ID, distribution, rights ID when present and bounded filesystem section layout. Raw retail NCA headers remain encrypted; Ninforge does not decrypt them.
+- `cnmt info` inspects a standalone plaintext CNMT for title ID, update version, referenced content IDs/sizes and related title metadata. Content IDs reference external NCAs rather than embedded bytes. Hashes are not verified.
 - `info ./main.nso` reports the readable NSO module build ID (64 hex characters) and the derived 16-hex-character Atmosphère cheat build ID (first eight bytes). This is **not** a title ID and cannot by itself identify a game or decrypt an NCA.
 - `nacp info` reads a separately obtained, unencrypted 0x4000-byte control.nacp and exposes localized titles, publishers, display version and selected ID fields. NACP has no unique signature, so inspection is **explicit**; compressed title tables introduced in newer firmware are rejected until supported.
 - `list` enumerates PFS0/HFS0/XCI entries or header-defined DS regions (ARM9/ARM7, FNT/FAT, overlay tables). DS header section labels are synthetic; separate `nitrofs/` entries are the actual DS filesystem paths. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
@@ -54,6 +58,8 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 - `src/lib.rs`: format identification, metadata, bounded PFS0 directory parsing, streaming extraction.
 - `src/hfs0.rs`: bounded standalone HFS0 and XCI partition indexing.
 - `src/nacp.rs`: standalone NACP metadata inspection; no decryption or game file extraction.
+- `src/nca.rs`: decrypted NCA header reader with checked section bounds.
+- `src/cnmt.rs`: standalone CNMT package metadata reader; no NCA content access.
 - `src/nds.rs`: header-declared DS regions and bounded FNT/FAT NitroFS traversal.
 - `src/saves.rs`: generic save candidate inventory and no-overwrite, file-by-file backup; no save editing or credentials.
 - `src/main.rs`: thin CLI presentation layer; no format-specific data logic.

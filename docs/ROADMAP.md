@@ -8,7 +8,7 @@ Reference: [Nintendo IR, worldwide hardware sales, June 30 2026](https://www.nin
 
 | Phase | Platforms | Why | Initial goal |
 |---|---|---|---|
-| 1 | **Switch** | Current Cheatarium/Eden pain + biggest installed base | NSP/PFS0 -> XCI/HFS0 (basic inspection done), NCA/NACP (uncompressed metadata reader done)/CNMT, build/title IDs (readable NSO build ID done), safe extraction |
+| 1 | **Switch** | Current Cheatarium/Eden pain + biggest installed base | NSP/PFS0 -> XCI/HFS0 (basic inspection done), NCA (plaintext header), CNMT and NACP readable metadata (done); build ID from NSO (done), encrypted NCA support still pending |
 | 2 | **DS** | Massive installed base; approachable unencrypted headers | NDS headers/regions and basic FNT/FAT filesystem (done), banners, save identification |
 | 3 | **GB/GBC and Wii** | Very popular and widely archived | cartridge header/catalog + Wii disc/WBFS inspection |
 | 4 | **GBA and 3DS** | Popular; 3DS adds encrypted containers | GBA headers, CIA/NCSD/NCCH metadata, opt-in external keys |

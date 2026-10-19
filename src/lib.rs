@@ -5,6 +5,8 @@
 
 mod hfs0;
 pub mod nacp;
+pub mod nca;
+pub mod cnmt;
 mod nds;
 pub mod saves;
 
@@ -24,6 +26,7 @@ pub enum Format {
     SwitchNso,
     SwitchXci,
     SwitchNca,
+    SwitchCnmt,
     Nintendo3dsCartridge,
     NintendoDs,
     Wii,
@@ -44,7 +47,8 @@ impl Format {
             Self::SwitchNacp => "Switch control.nacp",
             Self::SwitchNso => "Switch NSO executable",
             Self::SwitchXci => "Switch XCI",
-            Self::SwitchNca => "Switch NCA (readable header)",
+            Self::SwitchNca => "Switch NCA (decrypted header)",
+            Self::SwitchCnmt => "Switch CNMT metadata",
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
             Self::NintendoDs => "Nintendo DS",
             Self::Wii => "Wii disc",
@@ -65,7 +69,8 @@ impl Format {
             | Self::SwitchNacp
             | Self::SwitchNso
             | Self::SwitchXci
-            | Self::SwitchNca => "switch",
+            | Self::SwitchNca
+            | Self::SwitchCnmt => "switch",
             Self::Nintendo3dsCartridge => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii => "wii",
@@ -216,7 +221,7 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
     } else if head.len() >= 0x204
         && (&head[0x200..0x204] == b"NCA2" || &head[0x200..0x204] == b"NCA3")
     {
-        report.format = Format::SwitchNca;
+        return nca::inspect_decrypted_nca(input);
     }
     Ok(report)
 }

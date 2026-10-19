@@ -1,6 +1,8 @@
 //! Standalone binary for the Ninforge library. Pure std: no runtime dependencies.
 
 use ninforge::nacp::inspect_nacp;
+use ninforge::nca::inspect_decrypted_nca;
+use ninforge::cnmt::inspect_cnmt;
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -53,6 +55,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [cmd, sub, source, destination] if cmd == "saves" && sub == "backup" => {
             let copied = saves::backup(Path::new(source), Path::new(destination))?;
             println!("Backed up {copied} bytes to {destination} (source untouched)");
+        }
+        [cmd, sub, file] if cmd == "nca" && sub == "info" => {
+            let report = inspect_decrypted_nca(&mut File::open(file)?)?;
+            print_report(&report, false);
+        }
+        [cmd, sub, file, flag] if cmd == "nca" && sub == "info" && flag == "--json" => {
+            let report = inspect_decrypted_nca(&mut File::open(file)?)?;
+            println!("{}", report_json(&report, false));
+        }
+        [cmd, sub, file] if cmd == "cnmt" && sub == "info" => {
+            let report = inspect_cnmt(&mut File::open(file)?)?;
+            print_report(&report, false);
+        }
+        [cmd, sub, file, flag] if cmd == "cnmt" && sub == "info" && flag == "--json" => {
+            let report = inspect_cnmt(&mut File::open(file)?)?;
+            println!("{}", report_json(&report, false));
         }
         [cmd, sub, file] if cmd == "nacp" && sub == "info" => {
             let report = inspect_nacp(&mut File::open(file)?)?;
@@ -199,6 +217,8 @@ Usage:
   ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
+  ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
+  ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
   ninforge help                            Show this help
