@@ -57,13 +57,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let copied = saves::backup(Path::new(source), Path::new(destination))?;
             println!("Backed up {copied} bytes to {destination} (source untouched)");
         }
-        [cmd, sub, nsp, cnmt] if cmd == "package" && sub == "audit" => {
-            let result = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
-            print_package_audit(&result);
-        }
-        [cmd, sub, nsp, cnmt, flag] if cmd == "package" && sub == "audit" && flag == "--json" => {
-            let result = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
-            println!("{}", package_audit_json(&result));
+        [cmd, sub, rest @ ..] if cmd == "package" && sub == "audit" => {
+            run_package_audit(rest)?;
         }
         [cmd, sub, file] if cmd == "nca" && sub == "info" => {
             let report = inspect_decrypted_nca(&mut File::open(file)?)?;
@@ -227,8 +222,8 @@ Usage:
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
   ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
-  ninforge package audit <nsp> <cnmt> [--json]
-                                           Compare NSP entries with plaintext CNMT
+  ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--json]
+                                           Inspect NSP + explicit external metadata
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
@@ -292,6 +287,68 @@ fn report_json(report: &Report, include_entries: bool) -> String {
     text
 }
 
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PackageFlags<'a> {
+    json: bool,
+    nacp: Option<&'a str>,
+    main_nso: Option<&'a str>,
+}
+
+fn parse_package_flags(args: &[String]) -> Result<PackageFlags<'_>, Box<dyn std::error::Error>> {
+    let mut flags = PackageFlags::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--json" if !flags.json => {
+                flags.json = true;
+                i += 1;
+            }
+            "--nacp" if flags.nacp.is_none() => {
+                flags.nacp = Some(
+                    args.get(i + 1)
+                        .filter(|value| !value.starts_with("--"))
+                        .ok_or("--nacp requires a filepath")?,
+                );
+                i += 2;
+            }
+            "--main-nso" if flags.main_nso.is_none() => {
+                flags.main_nso = Some(
+                    args.get(i + 1)
+                        .filter(|value| !value.starts_with("--"))
+                        .ok_or("--main-nso requires a filepath")?,
+                );
+                i += 2;
+            }
+            other => return Err(format!("unknown, repeated, or malformed package option: {other}").into()),
+        }
+    }
+    Ok(flags)
+}
+
+fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let [nsp, cnmt, flags @ ..] = args else {
+        return Err(
+            "usage: ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--json]"
+                .into(),
+        );
+    };
+    let parsed = parse_package_flags(flags)?;
+    let mut audit = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
+    if let Some(path) = parsed.nacp {
+        audit.attach_nacp(&mut File::open(path)?)?;
+    }
+    if let Some(path) = parsed.main_nso {
+        audit.attach_main_nso(&mut File::open(path)?)?;
+    }
+    if parsed.json {
+        println!("{}", package_audit_json(&audit));
+    } else {
+        print_package_audit(&audit);
+    }
+    Ok(())
+}
+
 fn print_package_audit(audit: &PackageAudit) {
     println!("CNMT claimed title ID: {}", audit.title_id);
     println!("CNMT claimed version: {}", audit.version);
@@ -314,7 +371,13 @@ fn print_package_audit(audit: &PackageAudit) {
         audit.referenced.len()
     );
     println!("Unreferenced NCA entries: {}", audit.unreferenced_nca.len());
-    println!("External CNMT provenance is NOT authenticated to this NSP.");
+    for evidence in &audit.external_evidence {
+        println!("External evidence: {} ({})", evidence.kind, evidence.provenance);
+        for (name, value) in &evidence.fields {
+            println!("  {name}: {value}");
+        }
+    }
+    println!("External metadata is NOT authenticated or proven to belong to this NSP.");
 }
 
 fn package_audit_json(audit: &PackageAudit) -> String {
@@ -354,6 +417,27 @@ fn package_audit_json(audit: &PackageAudit) -> String {
             out.push(',');
         }
         out.push_str(&json_string(file));
+    }
+    out.push_str("],\"external_evidence\":[");
+    for (index, evidence) in audit.external_evidence.iter().enumerate() {
+        if index != 0 {
+            out.push(',');
+        }
+        write!(
+            &mut out,
+            r#"{{"kind":{},"provenance":{},"linked_to_package":false,"fields":{{"#,
+            json_string(evidence.kind),
+            json_string(evidence.provenance),
+        )
+        .expect("String write");
+        for (field_index, (key, value)) in evidence.fields.iter().enumerate() {
+            if field_index != 0 {
+                out.push(',');
+            }
+            write!(&mut out, "{}:{}", json_string(key), json_string(value))
+                .expect("String write");
+        }
+        out.push_str("}}");
     }
     out.push_str("]}");
     out
@@ -399,6 +483,11 @@ mod tests {
                 status: MatchStatus::Missing,
             }],
             unreferenced_nca: vec!["other.nca".into()],
+            external_evidence: vec![ninforge::package::ExternalEvidence {
+                kind: "main_nso",
+                provenance: "user_designated_main_unverified",
+                fields: vec![("atmosphere_cheat_build_id".into(), "1234ABCD".into())],
+            }],
         };
         let json = package_audit_json(&report);
         assert!(json.contains(r#""metadata_source":"external_cnmt_unverified""#));
@@ -406,6 +495,25 @@ mod tests {
         assert!(json.contains(r#""status":"missing""#));
         assert!(json.contains(r#""hashes_verified":false"#));
         assert!(json.contains(r#""unreferenced_nca":["other.nca"]"#));
+        assert!(json.contains(r#""linked_to_package":false"#));
+        assert!(json.contains(r#""provenance":"user_designated_main_unverified""#));
+        assert!(json.contains(r#""atmosphere_cheat_build_id":"1234ABCD""#));
+    }
+
+
+    #[test]
+    fn package_flags_are_explicit_and_reject_duplicates() {
+        let args = vec![
+            "--main-nso".into(), "main.nso".into(), "--json".into(),
+            "--nacp".into(), "control.nacp".into(),
+        ];
+        let flags = parse_package_flags(&args).unwrap();
+        assert_eq!(flags.nacp, Some("control.nacp"));
+        assert_eq!(flags.main_nso, Some("main.nso"));
+        assert!(flags.json);
+        assert!(parse_package_flags(&["--nacp".into()]).is_err());
+        assert!(parse_package_flags(&["--json".into(), "--json".into()]).is_err());
+        assert!(parse_package_flags(&["--bogus".into()]).is_err());
     }
 
     #[test]
