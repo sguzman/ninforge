@@ -157,10 +157,7 @@ fn header_evidence(audit: Option<&PackageAudit>) -> HeaderEvidence {
     }
 }
 
-pub fn summarize_record(
-    record: &TitleRecord,
-    collisions: &[VersionCollision],
-) -> EvidenceSummary {
+pub fn summarize_record(record: &TitleRecord, collisions: &[VersionCollision]) -> EvidenceSummary {
     let matched_release = collisions.iter().find(|collision| {
         collision.title_id == record.title_id
             && collision.version == record.version
@@ -196,7 +193,10 @@ pub fn summarize_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Format, package::{ContentMatch, HeaderStatus}};
+    use crate::{
+        package::{ContentMatch, HeaderStatus},
+        Format,
+    };
 
     fn entry(status: MatchStatus, hash: HashStatus, header: HeaderStatus) -> ContentMatch {
         ContentMatch {
@@ -243,14 +243,18 @@ mod tests {
             linked_application_id: None,
             display_title: None,
             display_version: None,
-            module_build_id: if build {Some("1234".into())} else {None},
-            atmosphere_cheat_build_id: if build {Some("1234567890ABCDEF".into())} else {None},
+            module_build_id: if build { Some("1234".into()) } else { None },
+            atmosphere_cheat_build_id: if build {
+                Some("1234567890ABCDEF".into())
+            } else {
+                None
+            },
             package_filename: None,
             package_audit,
         }
     }
     fn summarize(audit: Option<PackageAudit>, build: bool) -> EvidenceSummary {
-        summarize_record(&record(audit,build), &[])
+        summarize_record(&record(audit, build), &[])
     }
 
     #[test]
@@ -259,84 +263,188 @@ mod tests {
         assert_eq!(none.package, PackageEvidence::MetadataOnly);
         assert_eq!(none.headers, HeaderEvidence::NotChecked);
         assert_eq!(none.cheat_target, CheatTarget::MissingBuildId);
-        let sized = audit(vec![entry(MatchStatus::Present,HashStatus::NotChecked,HeaderStatus::NotChecked)],false,false);
-        assert_eq!(summarize(Some(sized),false).package,PackageEvidence::SizeMatched);
+        let sized = audit(
+            vec![entry(
+                MatchStatus::Present,
+                HashStatus::NotChecked,
+                HeaderStatus::NotChecked,
+            )],
+            false,
+            false,
+        );
+        assert_eq!(
+            summarize(Some(sized), false).package,
+            PackageEvidence::SizeMatched
+        );
     }
 
     #[test]
     fn content_hash_match_stays_only_a_candidate_for_cheat_linking() {
-        let a = audit(vec![entry(MatchStatus::Present,HashStatus::Matched,HeaderStatus::Consistent)],true,true);
-        let summary = summarize(Some(a),true);
-        assert_eq!(summary.package,PackageEvidence::HashMatchedToSuppliedCnmt);
-        assert_eq!(summary.headers,HeaderEvidence::AllConsistent);
-        assert_eq!(summary.cheat_target,CheatTarget::UnverifiedCandidateOnly);
+        let a = audit(
+            vec![entry(
+                MatchStatus::Present,
+                HashStatus::Matched,
+                HeaderStatus::Consistent,
+            )],
+            true,
+            true,
+        );
+        let summary = summarize(Some(a), true);
+        assert_eq!(summary.package, PackageEvidence::HashMatchedToSuppliedCnmt);
+        assert_eq!(summary.headers, HeaderEvidence::AllConsistent);
+        assert_eq!(summary.cheat_target, CheatTarget::UnverifiedCandidateOnly);
         assert!(!summary.automatic_cheat_match_allowed);
-        assert_eq!(summary.executable_association,"user_designated_main_nso_unverified");
+        assert_eq!(
+            summary.executable_association,
+            "user_designated_main_nso_unverified"
+        );
     }
 
     #[test]
     fn digest_mismatch_takes_precedence_over_missing_entries() {
-        let a = audit(vec![
-            entry(MatchStatus::Present,HashStatus::Mismatched,HeaderStatus::NotChecked),
-            entry(MatchStatus::Missing,HashStatus::Unavailable,HeaderStatus::NotChecked),
-        ],true,false);
-        assert_eq!(summarize(Some(a),true).package,PackageEvidence::HashMismatched);
+        let a = audit(
+            vec![
+                entry(
+                    MatchStatus::Present,
+                    HashStatus::Mismatched,
+                    HeaderStatus::NotChecked,
+                ),
+                entry(
+                    MatchStatus::Missing,
+                    HashStatus::Unavailable,
+                    HeaderStatus::NotChecked,
+                ),
+            ],
+            true,
+            false,
+        );
+        assert_eq!(
+            summarize(Some(a), true).package,
+            PackageEvidence::HashMismatched
+        );
     }
 
     #[test]
     fn incomplete_and_unavailable_hashes_never_claim_hash_match() {
-        let a = audit(vec![entry(MatchStatus::Missing,HashStatus::Unavailable,HeaderStatus::Unavailable)],true,true);
-        let summary = summarize(Some(a),false);
-        assert_eq!(summary.package,PackageEvidence::Incomplete);
-        assert_eq!(summary.headers,HeaderEvidence::Unavailable);
-        let empty = audit(Vec::new(),true,true);
-        assert_eq!(summarize(Some(empty.clone()),false).package,PackageEvidence::NoReferencedContent);
-        assert_eq!(summarize(Some(empty),false).headers,HeaderEvidence::NoReferencedContent);
+        let a = audit(
+            vec![entry(
+                MatchStatus::Missing,
+                HashStatus::Unavailable,
+                HeaderStatus::Unavailable,
+            )],
+            true,
+            true,
+        );
+        let summary = summarize(Some(a), false);
+        assert_eq!(summary.package, PackageEvidence::Incomplete);
+        assert_eq!(summary.headers, HeaderEvidence::Unavailable);
+        let empty = audit(Vec::new(), true, true);
+        assert_eq!(
+            summarize(Some(empty.clone()), false).package,
+            PackageEvidence::NoReferencedContent
+        );
+        assert_eq!(
+            summarize(Some(empty), false).headers,
+            HeaderEvidence::NoReferencedContent
+        );
     }
 
     #[test]
     fn header_conflict_is_independent_of_hash_match() {
-        let a=audit(vec![entry(MatchStatus::Present,HashStatus::Matched,HeaderStatus::TypeMismatch)],true,true);
-        let summary=summarize(Some(a),false);
-        assert_eq!(summary.package,PackageEvidence::HashMatchedToSuppliedCnmt);
-        assert_eq!(summary.headers,HeaderEvidence::Conflict);
+        let a = audit(
+            vec![entry(
+                MatchStatus::Present,
+                HashStatus::Matched,
+                HeaderStatus::TypeMismatch,
+            )],
+            true,
+            true,
+        );
+        let summary = summarize(Some(a), false);
+        assert_eq!(summary.package, PackageEvidence::HashMatchedToSuppliedCnmt);
+        assert_eq!(summary.headers, HeaderEvidence::Conflict);
     }
 
     #[test]
     fn release_collision_is_not_silently_resolved() {
-        let duplicate=VersionCollision {
-            title_id:"0100123456788000".into(),version:0,meta_type:"application".into(),
-            bundles:vec!["a".into(),"b".into()],conflicting_content:false,
+        let duplicate = VersionCollision {
+            title_id: "0100123456788000".into(),
+            version: 0,
+            meta_type: "application".into(),
+            bundles: vec!["a".into(), "b".into()],
+            conflicting_content: false,
         };
-        let same=summarize_record(&record(None,true),std::slice::from_ref(&duplicate));
-        assert_eq!(same.release,ReleaseEvidence::DuplicateSameCnmt);
-        assert_eq!(same.cheat_target,CheatTarget::UnverifiedCandidateOnly);
-        let conflicting=VersionCollision{conflicting_content:true,..duplicate};
-        let clash=summarize_record(&record(None,true),&[conflicting]);
-        assert_eq!(clash.release,ReleaseEvidence::DuplicateConflictingCnmt);
-        assert_eq!(clash.cheat_target,CheatTarget::ConflictingRelease);
+        let same = summarize_record(&record(None, true), std::slice::from_ref(&duplicate));
+        assert_eq!(same.release, ReleaseEvidence::DuplicateSameCnmt);
+        assert_eq!(same.cheat_target, CheatTarget::UnverifiedCandidateOnly);
+        let conflicting = VersionCollision {
+            conflicting_content: true,
+            ..duplicate
+        };
+        let clash = summarize_record(&record(None, true), &[conflicting]);
+        assert_eq!(clash.release, ReleaseEvidence::DuplicateConflictingCnmt);
+        assert_eq!(clash.cheat_target, CheatTarget::ConflictingRelease);
         assert!(!clash.automatic_cheat_match_allowed);
     }
 
     #[test]
     fn cannot_read_and_cannot_compare_are_distinct_header_states() {
-        let non_comparable = audit(vec![entry(
-            MatchStatus::Present, HashStatus::NotChecked, HeaderStatus::NotComparable
-        )], false, true);
-        assert_eq!(summarize(Some(non_comparable), false).headers, HeaderEvidence::NotComparable);
-        let mixed = audit(vec![
-            entry(MatchStatus::Present, HashStatus::NotChecked, HeaderStatus::Unavailable),
-            entry(MatchStatus::Present, HashStatus::NotChecked, HeaderStatus::NotComparable),
-        ], false, true);
-        assert_eq!(summarize(Some(mixed), false).headers, HeaderEvidence::MixedOrIncomplete);
+        let non_comparable = audit(
+            vec![entry(
+                MatchStatus::Present,
+                HashStatus::NotChecked,
+                HeaderStatus::NotComparable,
+            )],
+            false,
+            true,
+        );
+        assert_eq!(
+            summarize(Some(non_comparable), false).headers,
+            HeaderEvidence::NotComparable
+        );
+        let mixed = audit(
+            vec![
+                entry(
+                    MatchStatus::Present,
+                    HashStatus::NotChecked,
+                    HeaderStatus::Unavailable,
+                ),
+                entry(
+                    MatchStatus::Present,
+                    HashStatus::NotChecked,
+                    HeaderStatus::NotComparable,
+                ),
+            ],
+            false,
+            true,
+        );
+        assert_eq!(
+            summarize(Some(mixed), false).headers,
+            HeaderEvidence::MixedOrIncomplete
+        );
     }
 
     #[test]
     fn mixed_headers_not_all_consistent() {
-        let a=audit(vec![
-            entry(MatchStatus::Present,HashStatus::NotChecked,HeaderStatus::Consistent),
-            entry(MatchStatus::Present,HashStatus::NotChecked,HeaderStatus::Unavailable),
-        ],false,true);
-        assert_eq!(summarize(Some(a),false).headers,HeaderEvidence::MixedOrIncomplete);
+        let a = audit(
+            vec![
+                entry(
+                    MatchStatus::Present,
+                    HashStatus::NotChecked,
+                    HeaderStatus::Consistent,
+                ),
+                entry(
+                    MatchStatus::Present,
+                    HashStatus::NotChecked,
+                    HeaderStatus::Unavailable,
+                ),
+            ],
+            false,
+            true,
+        );
+        assert_eq!(
+            summarize(Some(a), false).headers,
+            HeaderEvidence::MixedOrIncomplete
+        );
     }
 }

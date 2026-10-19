@@ -9,7 +9,9 @@ use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
-use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory, TitleRecord, VersionCollision};
+use ninforge::title_inventory::{
+    inventory_metadata_root_with_packages, TitleInventory, TitleRecord, VersionCollision,
+};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -660,8 +662,10 @@ fn print_title_inventory(catalog: &TitleInventory) {
             let evidence = summarize_record(record, &group.version_collisions);
             println!(
                 "    evidence: {} / {} / {}; cheat: {}",
-                evidence.package.as_str(), evidence.headers.as_str(),
-                evidence.release.as_str(), evidence.cheat_target.as_str()
+                evidence.package.as_str(),
+                evidence.headers.as_str(),
+                evidence.release.as_str(),
+                evidence.cheat_target.as_str()
             );
             if let Some(ref audit) = record.package_audit {
                 println!("    package {}: {} of {} content entries match by size; {} of {} match CNMT SHA-256 (checked: {})",
@@ -688,13 +692,9 @@ fn option_json(value: Option<&str>) -> String {
     value.map_or_else(|| "null".to_string(), json_string)
 }
 
-
 /// Additive evidence contract: categorical observations, never an identity
 /// confidence percentage or permission to automatically attach cheat files.
-fn title_record_evidence_json(
-    record: &TitleRecord,
-    collisions: &[VersionCollision],
-) -> String {
+fn title_record_evidence_json(record: &TitleRecord, collisions: &[VersionCollision]) -> String {
     let status = summarize_record(record, collisions);
     format!(
         r#"{{"package":{},"headers":{},"release":{},"executable_association":{},"cheat_target":{},"automatic_cheat_match_allowed":{}}}"#,
