@@ -184,3 +184,79 @@ fn package_symlink_is_rejected_when_audit_is_requested() {
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("non-symlink"));
 }
+
+
+#[test]
+fn evidence_json_default_is_metadata_only_with_no_cheat_link_permission() {
+    let f = Fixture::new();
+    f.add_bundle("demo", b"abc", Some(b"abc"));
+    let result = f.run(&["--json"]);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let text = String::from_utf8(result.stdout).unwrap();
+    assert!(text.contains(r#""schema_version":1"#));
+    assert!(text.contains(r#""evidence_schema_version":1"#));
+    assert!(text.contains(r#""evidence":{"package":"metadata_only","headers":"not_checked","release":"unique_within_supplied_dataset","executable_association":"unavailable","cheat_target":"missing_build_id","automatic_cheat_match_allowed":false}"#));
+}
+
+#[test]
+fn evidence_json_reports_hash_correspondence_but_not_verified_title_identity() {
+    let f = Fixture::new();
+    let nca = readable_nca();
+    f.add_bundle("demo", &nca, Some(&nca));
+    let output = f.run(&["--packages", "--hash", "--headers", "--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(r#""package":"hash_matched_to_supplied_cnmt""#));
+    assert!(text.contains(r#""headers":"all_readable_headers_consistent""#));
+    assert!(text.contains(r#""cheat_target":"missing_build_id""#));
+    assert!(text.contains(r#""automatic_cheat_match_allowed":false"#));
+    assert!(text.contains(r#""hashes_verified":false"#));
+}
+
+#[test]
+fn evidence_json_distinguishes_modified_content_from_size_match() {
+    let f = Fixture::new();
+    f.add_bundle("demo", b"abc", Some(b"abd"));
+    let output = f.run(&["--packages", "--hash", "--json"]);
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(r#""complete_by_size":true"#));
+    assert!(text.contains(r#""package":"hash_mismatched_to_supplied_cnmt""#));
+    assert!(text.contains(r#""automatic_cheat_match_allowed":false"#));
+}
+
+#[test]
+fn evidence_json_build_id_always_a_candidate_not_a_verified_link() {
+    let f = Fixture::new();
+    let dir = f.add_bundle("demo", b"abc", Some(b"abc"));
+    let mut nso = vec![0u8; 0x100];
+    nso[..4].copy_from_slice(b"NSO0");
+    nso[0x40..0x48].copy_from_slice(&[1,2,3,4,5,6,7,8]);
+    fs::write(dir.join("main.nso"), nso).unwrap();
+    let output = f.run(&["--packages", "--hash", "--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(r#""atmosphere_cheat_build_id":"0102030405060708""#));
+    assert!(text.contains(r#""cheat_target":"unverified_candidate_only""#));
+    assert!(text.contains(r#""executable_association":"user_designated_main_nso_unverified""#));
+    assert!(text.contains(r#""automatic_cheat_match_allowed":false"#));
+}
+
+#[test]
+fn evidence_json_conflicting_same_version_cnmt_blocks_candidate_use() {
+    let f = Fixture::new();
+    let first = f.add_bundle("one", b"abc", None);
+    f.add_bundle("two", b"def", None);
+    let mut nso = vec![0u8; 0x100];
+    nso[..4].copy_from_slice(b"NSO0");
+    nso[0x40..0x48].copy_from_slice(&[1,2,3,4,5,6,7,8]);
+    fs::write(first.join("main.nso"), nso).unwrap();
+    let output = f.run(&["--json"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(r#""version_collisions":1"#));
+    assert!(text.contains(r#""conflicting_content":true"#));
+    assert!(text.contains(r#""release":"duplicate_conflicting_cnmt""#));
+    assert!(text.contains(r#""cheat_target":"conflicting_release""#));
+    assert!(text.contains(r#""automatic_cheat_match_allowed":false"#));
+}
