@@ -67,7 +67,3 @@ Synthetic sidecar bundles are indexed one directory deep only, ordered by folder
 ## Combined title and package inventory
 
 The optional `titles inventory <root> --packages` uses only files exactly named `package.nsp` or `package.xci` within each immediate bundle. The integration tests use synthetic CNMT+PFS0 fixtures to verify default metadata-only behavior, size-only matches, streamed SHA-256 matches, same-size tampering, bounded readable header checks, optional missing packages, ambiguous candidate refusal, flag validation, and symlink refusal. Package audit status remains nested under its originating title record. The source CNMT and the associated NACP/NSO are not authenticated.
-
-## Cheatarium evidence contract
-
-The added `evidence` record object is tested as a categorical view of the independently retained package audit, header status, and title-release collision data, with `evidence_schema_version: 1`. Unit tests cover metadata-only, name/size match, full correspondence to a supplied untrusted CNMT SHA-256, hash mismatch, incomplete package, conflicting NCA header, mixed/unavailable headers, identical duplicates, conflicting same-version duplicates and an NSO build ID that remains an unverified candidate. JSON retains legacy `schema_version: 1` fields; no case allows automatic cheat attachment or claims an authenticated title.

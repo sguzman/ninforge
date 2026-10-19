@@ -1,7 +1,6 @@
 //! Standalone binary for the Ninforge library. Pure std: no runtime dependencies.
 
 use ninforge::cnmt::inspect_cnmt;
-use ninforge::evidence::summarize_record;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
@@ -9,9 +8,7 @@ use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
-use ninforge::title_inventory::{
-    inventory_metadata_root_with_packages, TitleInventory, TitleRecord, VersionCollision,
-};
+use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -659,14 +656,6 @@ fn print_title_inventory(catalog: &TitleInventory) {
                 record.version,
                 record.atmosphere_cheat_build_id.as_deref().unwrap_or("-")
             );
-            let evidence = summarize_record(record, &group.version_collisions);
-            println!(
-                "    evidence: {} / {} / {}; cheat: {}",
-                evidence.package.as_str(),
-                evidence.headers.as_str(),
-                evidence.release.as_str(),
-                evidence.cheat_target.as_str()
-            );
             if let Some(ref audit) = record.package_audit {
                 println!("    package {}: {} of {} content entries match by size; {} of {} match CNMT SHA-256 (checked: {})",
                     record.package_filename.as_deref().unwrap_or("-"),
@@ -692,26 +681,11 @@ fn option_json(value: Option<&str>) -> String {
     value.map_or_else(|| "null".to_string(), json_string)
 }
 
-/// Additive evidence contract: categorical observations, never an identity
-/// confidence percentage or permission to automatically attach cheat files.
-fn title_record_evidence_json(record: &TitleRecord, collisions: &[VersionCollision]) -> String {
-    let status = summarize_record(record, collisions);
-    format!(
-        r#"{{"package":{},"headers":{},"release":{},"executable_association":{},"cheat_target":{},"automatic_cheat_match_allowed":{}}}"#,
-        json_string(status.package.as_str()),
-        json_string(status.headers.as_str()),
-        json_string(status.release.as_str()),
-        json_string(status.executable_association),
-        json_string(status.cheat_target.as_str()),
-        status.automatic_cheat_match_allowed,
-    )
-}
-
-/// Versioned schema with explicit evidence and no inferred package association.
+/// Local title inventory JSON: each optional package audit retains its provenance.
 /// This is a local inventory, not a server-backed latest-version feed.
 fn title_inventory_json(catalog: &TitleInventory) -> String {
     let mut out = format!(
-        r#"{{"schema_version":1,"evidence_schema_version":1,"source":"external_plaintext_metadata_unverified","bundles_scanned":{},"package_audits_requested":{},"packages_audited":{},"packages_missing":{},"application_groups":{},"version_collisions":{},"groups":["#,
+        r#"{{"schema_version":1,"source":"external_plaintext_metadata_unverified","bundles_scanned":{},"package_audits_requested":{},"packages_audited":{},"packages_missing":{},"application_groups":{},"version_collisions":{},"groups":["#,
         catalog.bundles_scanned,
         catalog.package_audits_requested,
         catalog.packages_audited,
@@ -736,7 +710,7 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
             }
             write!(
                 &mut out,
-                r#"{{"bundle":{},"title_id":{},"version":{},"meta_type":{},"application_group_id":{},"grouping_basis":{},"source_sha256":{},"content_count":{},"linked_application_id":{},"display_title":{},"display_version":{},"module_build_id":{},"atmosphere_cheat_build_id":{},"nacp_nso_link_verified":false,"package_filename":{},"package_audit":{},"evidence":{}}}"#,
+                r#"{{"bundle":{},"title_id":{},"version":{},"meta_type":{},"application_group_id":{},"grouping_basis":{},"source_sha256":{},"content_count":{},"linked_application_id":{},"display_title":{},"display_version":{},"module_build_id":{},"atmosphere_cheat_build_id":{},"nacp_nso_link_verified":false,"package_filename":{},"package_audit":{}}}"#,
                 json_string(&record.bundle),
                 json_string(&record.title_id),
                 record.version,
@@ -752,7 +726,6 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
                 option_json(record.atmosphere_cheat_build_id.as_deref()),
                 option_json(record.package_filename.as_deref()),
                 record.package_audit.as_ref().map_or_else(|| "null".to_string(), package_audit_json),
-                title_record_evidence_json(record, &group.version_collisions),
             ).expect("String write");
         }
         out.push_str(r#"],"version_collisions":["#);
