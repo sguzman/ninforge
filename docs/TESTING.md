@@ -39,3 +39,7 @@ Synthetic test headers only: keyless/decrypted NCA headers with content type, ti
 ## Package-level metadata audit
 
 Synthetic in-memory NSP entries and plaintext CNMT records are correlated by exact 16-byte hexadecimal content ID and expected NCA name, without decryption. Tests cover matched and missing content, mismatched lengths, unsupported `.ncz` compression, duplicate case variants, meta `.cnmt.nca` filenames, and unrelated/non-NSP inputs. Passing the audit is **not** proof of title authenticity or validated SHA-256 hashes.
+
+## External title and executable evidence
+
+Package audit tests construct an entirely synthetic 0x4000-byte NACP and NSO0 header. The evidence attaches only when explicitly supplied; malformed NACP, non-NSO files, and duplicate attachment attempts are rejected. The CLI accepts `--nacp`, `--main-nso`, and `--json` without order dependence after the required NSP and CNMT paths, rejecting duplicates and missing flag values. The JSON payload retains separate evidence provenance and `linked_to_package: false`, even when titles and build IDs are present. No title-to-executable association is cryptographically verified.

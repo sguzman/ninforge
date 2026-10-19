@@ -38,7 +38,7 @@ Within each phase, deliver: recognition -> trustworthy metadata -> validated dir
 
 ## Package correlation MVP
 
-Implemented: explicit plaintext CNMT + PFS0 NSP name-and-size audit, structured content statuses, and machine-readable output. Does not authenticate CNMT provenance, decrypt encrypted meta NCAs, verify SHA-256, derive executable NSO build IDs from encrypted content, or automatically associate multiple installed game versions. These remain future work.
+Implemented: explicit plaintext CNMT + PFS0 NSP name-and-size audit, structured content statuses, machine-readable output, and optional read-only user-supplied NACP and user-designated main NSO metadata. External evidence is never implicitly linked to the package. Does not authenticate CNMT provenance, decrypt encrypted meta NCAs, verify SHA-256, derive executable NSO build IDs from encrypted content, or automatically associate multiple installed game versions. These remain future work.
 
 ## Save inventory MVP
 
