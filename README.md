@@ -1,8 +1,8 @@
 # Ninforge
 
-A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and (later) saves across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency.
+A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and save backups across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency.
 
-**Current status: early, read-only format inspection.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 supports bounded entry inspection and extraction. DS supports ROM header sections and NitroFS file-tree inspection and extraction. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
+**Current status: early format inspection and safe single-file save backups.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 supports bounded entry inspection and extraction. DS supports ROM header sections and NitroFS file-tree inspection and extraction. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
 
 ## Build
 
@@ -35,8 +35,8 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
-- `list` enumerates PFS0 entries or header-defined DS regions (ARM9/ARM7, FNT/FAT, overlay tables). DS section labels are **not** an internal filesystem. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
-- `verify` validates PFS0 entry names, non-overlap and bounds, or DS section bounds. It is **not** a content hash check, signature check, or authenticity guarantee.
+- `list` enumerates PFS0 entries or header-defined DS regions (ARM9/ARM7, FNT/FAT, overlay tables). DS header section labels are synthetic; separate `nitrofs/` entries are the actual DS filesystem paths. PFS0 is an outer archive format; encrypted NCA contents are **not** decrypted.
+- `verify` validates PFS0 entry names, non-overlap and bounds, or DS section and NitroFS file bounds. It is **not** a content hash check, signature check, or authenticity guarantee.
 - `extract` writes **one specified** PFS0 entry, DS section or NitroFS file to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
 - `scan <directory>` recursively inventories recognized game files, skips symlinks and streams file reports; `scan --json` uses NDJSON (one object per line), reports bad files to stderr and exits nonzero on errors.
 - `saves scan` discovers potential raw saves using extension hints, without claiming game compatibility or inspecting personal saves. `saves backup` copies an explicitly selected regular file to a named output; it never overwrites, publishes via a hard link after syncing a temporary copy, and leaves the source untouched. The destination filesystem must support hard links.
@@ -45,7 +45,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ## Architecture
 
 - `src/lib.rs`: format identification, metadata, bounded PFS0 directory parsing, streaming extraction.
-- `src/nds.rs`: header-declared DS regions with checked bounds.
+- `src/nds.rs`: header-declared DS regions and bounded FNT/FAT NitroFS traversal.
 - `src/saves.rs`: generic save candidate inventory and no-overwrite, file-by-file backup; no save editing or credentials.
 - `src/main.rs`: thin CLI presentation layer; no format-specific data logic.
 - Console modules will be separated as their parsers grow. Share generic IO/bounds utilities but **do not** impose a fake common save format.

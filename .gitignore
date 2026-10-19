@@ -43,3 +43,12 @@ rustc-ice-*.txt
 prod.keys
 title.keys
 keys.txt
+
+# Additional save candidates
+*.duc
+*.gci
+*.gcs
+*.eep
+*.sra
+*.fla
+*.mpk

@@ -14,7 +14,7 @@ jobs:
       - name: Refuse binary game assets or console keys in tracked files
         run: |
           set -eu
-          git ls-files | grep -Ei '\.(nsp|nsz|xci|xcz|nca|ncz|cia|3ds|cci|cxi|nds|srl|gba|gbc|gb|nes|fds|sfc|smc|n64|z64|v64|iso|wbfs|wud|wux|wad|sav|srm|dsv|keys|tik)$|(^|/)(prod\.keys|title\.keys|keys\.txt)$' && {
+          git ls-files | grep -Ei '\.(nsp|nsz|xci|xcz|nca|ncz|cia|3ds|cci|cxi|nds|srl|gba|gbc|gb|nes|fds|sfc|smc|n64|z64|v64|iso|wbfs|wud|wux|wad|sav|srm|dsv|duc|gci|gcs|eep|sra|fla|mpk|keys|tik)$|(^|/)(prod\.keys|title\.keys|keys\.txt)$' && {
             echo 'Forbidden tracked Nintendo asset or key detected' >&2
             exit 1
           } || test "$?" -eq 1
