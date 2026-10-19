@@ -2,7 +2,7 @@
 
 A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and (later) saves across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency.
 
-**Current status: early, read-only format inspection.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and DS header-defined regions support bounded listing, single-entry extraction and structural verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
+**Current status: early, read-only format inspection.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 supports bounded entry inspection and extraction. DS supports ROM header sections and NitroFS file-tree inspection and extraction. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
 
 ## Build
 
@@ -27,6 +27,8 @@ ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
 ninforge list ./game.nds
 ninforge extract ./game.nds arm9.bin ./arm9.bin
+ninforge list ./game.nds --json
+ninforge extract ./game.nds nitrofs/sound/bgm.bin ./bgm.bin
 ninforge scan /drive/games --json
 ```
 

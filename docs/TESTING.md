@@ -1,6 +1,6 @@
 # Test strategy / no copyrighted fixtures
 
-**Default rule: fixtures are constructed in test code, not checked into the repository.** The unit tests build a tiny synthetic PFS0 with text content; NES, DS, GB/GBC and GBA are tested with programmatically constructed dummy headers. No retail ROM, game save, Nintendo logo image, keys, or proprietary asset is required for the tests. The GB boot header logo byte sequence is a format identifier, not a playable game image.
+**Default rule: fixtures are constructed in test code, not checked into the repository.** The unit tests build a tiny synthetic PFS0 with text content; NES, DS/NitroFS, GB/GBC and GBA are tested with programmatically constructed dummy headers. No retail ROM, game save, Nintendo logo image, keys, or proprietary asset is required for the tests. The GB boot header logo byte sequence is a format identifier, not a playable game image.
 
 `cargo test --all-targets` runs tests. GitHub Actions also checks formatting and clippy. The tracked-filename guard catches common game image and key extensions, but it cannot detect content deliberately disguised with a benign extension: **human review of staged content is mandatory**.
 

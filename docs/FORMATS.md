@@ -6,7 +6,7 @@
 | Switch XCI | `HEAD` at 0x100 | Format/length only | No | No | No |
 | Switch NCA | Readable `NCA2`/`NCA3` at 0x200 | Format/length only | No | No | No |
 | 3DS cartridge | `NCSD` at 0x100 | Format/length only | No | No | No |
-| DS | Expected logo CRC + game code | Title, game/maker/unit/version codes and section count | Header sections only | One ARM9/ARM7/FNT/FAT/overlay section | No; section bounds only |
+| DS | Expected logo CRC + game code | Title, game/maker/unit/version codes and section count | Header sections and NitroFS files | One section or NitroFS file | No; bounded sections, directory/FAT/file checks |
 | Wii disc | Disc magic + ID | Game ID | No | No | No |
 | GameCube disc | Disc magic + ID | Game ID and title | No | No | No |
 | GBA | Fixed header byte, game code, complement checksum | Title, game/maker code, version | No | No | No |
