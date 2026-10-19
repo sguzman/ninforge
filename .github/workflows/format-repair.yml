@@ -1,0 +1,28 @@
+name: Ninforge temporary hashing QA
+on:
+  push:
+    branches: [feat/bootstrap-format-inspection]
+permissions:
+  contents: write
+jobs:
+  format-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+      - name: Save formatter and lockfile to feature branch only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: format SHA-256 audit and lock Rust dependencies'
+            git push origin HEAD:feat/bootstrap-format-inspection
+          fi
