@@ -7,10 +7,11 @@
 
 use crate::cnmt::{inspect_cnmt_with_content, ContentRecord};
 use crate::nacp::inspect_nacp;
+use crate::nca::inspect_decrypted_nca;
 use crate::{inspect, Entry, Format};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
+use std::io::{self, Cursor, ErrorKind, Read, Seek, SeekFrom};
 
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidData, message)
@@ -32,6 +33,32 @@ pub enum HashStatus {
     Mismatched,
     Unavailable,
 }
+/// Structural agreement of an accessible *plaintext* NCA header with the
+/// untrusted CNMT content reference. This never authenticates the title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderStatus {
+    NotChecked,
+    Unavailable,
+    Consistent,
+    TypeMismatch,
+    SizeMismatch,
+    Malformed,
+    NotComparable,
+}
+impl HeaderStatus {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::NotChecked => "not_checked",
+            Self::Unavailable => "unavailable",
+            Self::Consistent => "consistent",
+            Self::TypeMismatch => "type_mismatch",
+            Self::SizeMismatch => "size_mismatch",
+            Self::Malformed => "malformed",
+            Self::NotComparable => "not_comparable",
+        }
+    }
+}
+
 impl HashStatus {
     pub fn name(self) -> &'static str {
         match self {
@@ -67,6 +94,10 @@ pub struct ContentMatch {
     pub expected_sha256: String,
     pub actual_sha256: Option<String>,
     pub hash_status: HashStatus,
+    pub header_status: HeaderStatus,
+    pub header_program_id: Option<String>,
+    pub header_content_type: Option<String>,
+    pub header_declared_size: Option<u64>,
 }
 
 /// Metadata from a separately supplied, independently parsed file.
@@ -88,11 +119,16 @@ pub struct PackageAudit {
     pub meta_type: String,
     pub package_entries: usize,
     pub hashing_requested: bool,
+    pub headers_requested: bool,
     pub referenced: Vec<ContentMatch>,
     pub unreferenced_nca: Vec<String>,
     pub external_evidence: Vec<ExternalEvidence>,
 }
 impl PackageAudit {
+    pub fn header_count(&self, status: HeaderStatus) -> usize {
+        self.referenced.iter().filter(|record| record.header_status == status).count()
+    }
+
     pub fn hash_count(&self, status: HashStatus) -> usize {
         self.referenced
             .iter()
@@ -176,7 +212,7 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
     nsp: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
-    audit_package_internal(nsp, cnmt, false, true)
+    audit_package_internal(nsp, cnmt, false, false, true)
 }
 
 /// Inspect either NSP/PFS0 or XCI secure partition entries using the same
@@ -185,7 +221,7 @@ pub fn audit_switch_package<R: Read + Seek, C: Read + Seek>(
     package: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
-    audit_package_internal(package, cnmt, false, false)
+    audit_package_internal(package, cnmt, false, false, false)
 }
 
 /// Opt-in, bounded-memory, streaming SHA-256 verification of NSP NCA entry
@@ -195,7 +231,7 @@ pub fn audit_nsp_with_hashes<R: Read + Seek, C: Read + Seek>(
     nsp: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
-    audit_package_internal(nsp, cnmt, true, true)
+    audit_package_internal(nsp, cnmt, true, false, true)
 }
 
 /// Opt-in full-content SHA-256 check against externally supplied CNMT hashes
@@ -204,13 +240,26 @@ pub fn audit_switch_package_with_hashes<R: Read + Seek, C: Read + Seek>(
     package: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
-    audit_package_internal(package, cnmt, true, false)
+    audit_package_internal(package, cnmt, true, false, false)
+}
+
+
+/// Read at most the first 0x400 bytes of each unambiguous, present NCA entry.
+/// Only plaintext NCA2/NCA3 headers can be structurally compared. This is
+/// independent of SHA-256 checking, which must be explicitly requested too.
+pub fn audit_switch_package_with_headers<R: Read + Seek, C: Read + Seek>(
+    package: &mut R,
+    cnmt: &mut C,
+    verify_hashes: bool,
+) -> io::Result<PackageAudit> {
+    audit_package_internal(package, cnmt, verify_hashes, true, false)
 }
 
 fn audit_package_internal<R: Read + Seek, C: Read + Seek>(
     package_bytes: &mut R,
     cnmt: &mut C,
     verify_hashes: bool,
+    inspect_headers: bool,
     nsp_only: bool,
 ) -> io::Result<PackageAudit> {
     let package = inspect(package_bytes)?;
@@ -247,6 +296,17 @@ fn audit_package_internal<R: Read + Seek, C: Read + Seek>(
         let mut result = match_record(&package.entries, record, secure_prefix);
         if let Some(ref filename) = result.package_filename {
             matched_names.insert(filename.to_ascii_lowercase());
+        }
+        if inspect_headers {
+            if result.status == MatchStatus::Present {
+                let name = result.package_filename.as_deref()
+                    .ok_or_else(|| invalid("present entry missing path"))?;
+                let entry = package.entries.iter().find(|entry| entry.name == name)
+                    .ok_or_else(|| invalid("present entry missing from parsed package"))?;
+                compare_header(package_bytes, entry, record, &mut result)?;
+            } else {
+                result.header_status = HeaderStatus::Unavailable;
+            }
         }
         if verify_hashes {
             if result.status == MatchStatus::Present {
@@ -297,10 +357,72 @@ fn audit_package_internal<R: Read + Seek, C: Read + Seek>(
         meta_type: get("meta_type")?,
         package_entries: package.entries.len(),
         hashing_requested: verify_hashes,
+        headers_requested: inspect_headers,
         referenced: matches,
         unreferenced_nca,
         external_evidence: Vec::new(),
     })
+}
+
+fn compare_header<R: Read + Seek>(
+    archive: &mut R,
+    entry: &Entry,
+    content: &ContentRecord,
+    result: &mut ContentMatch,
+) -> io::Result<()> {
+    if entry.size < 0x400 {
+        result.header_status = HeaderStatus::Unavailable;
+        return Ok(());
+    }
+    archive.seek(SeekFrom::Start(entry.offset))?;
+    let mut raw = [0u8; 0x400];
+    archive.read_exact(&mut raw)?;
+    if !matches!(&raw[0x200..0x204], b"NCA2" | b"NCA3") {
+        result.header_status = HeaderStatus::Unavailable;
+        return Ok(());
+    }
+    let report = match inspect_decrypted_nca(&mut Cursor::new(raw)) {
+        Ok(report) => report,
+        Err(_) => {
+            result.header_status = HeaderStatus::Malformed;
+            return Ok(());
+        }
+    };
+    let field = |key: &str| -> Option<&str> {
+        report.metadata.iter()
+            .find(|(label, _)| label == key)
+            .map(|(_, value)| value.as_str())
+    };
+    let Some(actual_type) = field("content_type") else {
+        result.header_status = HeaderStatus::Malformed;
+        return Ok(());
+    };
+    let Some(actual_size) = field("declared_size").and_then(|s| s.parse::<u64>().ok()) else {
+        result.header_status = HeaderStatus::Malformed;
+        return Ok(());
+    };
+    result.header_content_type = Some(actual_type.to_string());
+    result.header_declared_size = Some(actual_size);
+    result.header_program_id = field("program_id").map(str::to_owned);
+    // These pairs are supported by the NCA and NCM content-type tables.
+    // Other record kinds are not inferred to match arbitrary NCA types.
+    let expected_type = match content.content_type {
+        "program" => Some("program"),
+        "meta" => Some("meta"),
+        "control" => Some("control"),
+        "data" => Some("data"),
+        "html_document" | "legal_information" => Some("manual"),
+        _ => None,
+    };
+    result.header_status = if actual_size != content.size {
+        HeaderStatus::SizeMismatch
+    } else if let Some(expected) = expected_type {
+        if expected == actual_type { HeaderStatus::Consistent }
+        else { HeaderStatus::TypeMismatch }
+    } else {
+        HeaderStatus::NotComparable
+    };
+    Ok(())
 }
 
 fn sha256_hex(digest: &[u8; 32]) -> String {
@@ -372,6 +494,10 @@ fn match_record(entries: &[Entry], record: &ContentRecord, prefix: &str) -> Cont
         expected_sha256: sha256_hex(&record.expected_sha256),
         actual_sha256: None,
         hash_status: HashStatus::NotChecked,
+        header_status: HeaderStatus::NotChecked,
+        header_program_id: None,
+        header_content_type: None,
+        header_declared_size: None,
     }
 }
 
@@ -713,6 +839,76 @@ mod tests {
         .unwrap();
         assert_eq!(result.package_format, Format::SwitchNsp);
         assert_eq!(result.count(MatchStatus::Present), 1);
+    }
+
+
+    fn readable_nca(kind: u8, declared_size: usize) -> Vec<u8> {
+        let mut data = vec![0u8; declared_size];
+        data[0x200..0x204].copy_from_slice(b"NCA3");
+        data[0x205] = kind;
+        data[0x208..0x210].copy_from_slice(&(declared_size as u64).to_le_bytes());
+        data[0x210..0x218].copy_from_slice(&0x0100123456789000u64.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn readable_header_compares_type_and_size_and_preserves_program_id() {
+        let data = readable_nca(0, 0xc00);
+        let archive = nsp(&[("11111111111111111111111111111111.nca", &data)]);
+        let meta = cnmt(&[(CONTENT_A, data.len() as u64, 1)]);
+        let audit = audit_switch_package_with_headers(
+            &mut Cursor::new(archive), &mut Cursor::new(meta), false,
+        ).unwrap();
+        assert!(audit.headers_requested);
+        assert_eq!(audit.header_count(HeaderStatus::Consistent), 1);
+        assert_eq!(audit.referenced[0].header_program_id.as_deref(), Some("0100123456789000"));
+        assert_eq!(audit.referenced[0].header_declared_size, Some(0xc00));
+        assert_eq!(audit.hash_count(HashStatus::NotChecked), 1);
+    }
+
+    #[test]
+    fn readable_header_can_disagree_with_cnmt_type_or_size() {
+        let mut wrong_type = readable_nca(2, 0xc00);
+        let mut archive = nsp(&[("11111111111111111111111111111111.nca", &wrong_type)]);
+        let meta = cnmt(&[(CONTENT_A, wrong_type.len() as u64, 1)]);
+        let audit = audit_switch_package_with_headers(
+            &mut Cursor::new(&mut archive), &mut Cursor::new(meta), false,
+        ).unwrap();
+        assert_eq!(audit.header_count(HeaderStatus::TypeMismatch), 1);
+        wrong_type[0x205] = 0;
+        wrong_type[0x208..0x210].copy_from_slice(&0xd00u64.to_le_bytes());
+        let archive = nsp(&[("11111111111111111111111111111111.nca", &wrong_type)]);
+        let audit = audit_switch_package_with_headers(
+            &mut Cursor::new(archive),
+            &mut Cursor::new(cnmt(&[(CONTENT_A, wrong_type.len() as u64, 1)])),
+            false,
+        ).unwrap();
+        assert_eq!(audit.header_count(HeaderStatus::SizeMismatch), 1);
+    }
+
+    #[test]
+    fn encrypted_and_missing_headers_cannot_be_inferred() {
+        let archive = nsp(&[("11111111111111111111111111111111.nca", &[0x22; 0xc00])]);
+        let audit = audit_switch_package_with_headers(
+            &mut Cursor::new(archive),
+            &mut Cursor::new(cnmt(&[(CONTENT_A, 0xc00, 1), (CONTENT_B, 0xc00, 3)])),
+            false,
+        ).unwrap();
+        assert_eq!(audit.header_count(HeaderStatus::Unavailable), 2);
+        assert!(audit.referenced.iter().all(|r| r.header_program_id.is_none()));
+    }
+
+    #[test]
+    fn syntactically_invalid_plaintext_header_is_reported_not_accepted() {
+        let mut data = readable_nca(0, 0xc00);
+        data[0x204] = 0xff;
+        let archive = nsp(&[("11111111111111111111111111111111.nca", &data)]);
+        let audit = audit_switch_package_with_headers(
+            &mut Cursor::new(archive),
+            &mut Cursor::new(cnmt(&[(CONTENT_A, 0xc00, 1)])),
+            false,
+        ).unwrap();
+        assert_eq!(audit.header_count(HeaderStatus::Malformed), 1);
     }
 
     #[test]
