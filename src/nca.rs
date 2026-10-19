@@ -96,8 +96,8 @@ mod tests {
         x.extend([0u8;0x10]);
         assert!(inspect_decrypted_nca(&mut Cursor::new(x)).is_err());
         let mut x=fixture();
-        x[0x248..0x24c].copy_from_slice(&7u32.to_le_bytes());
-        x[0x24c..0x250].copy_from_slice(&10u32.to_le_bytes());
+        x[0x250..0x254].copy_from_slice(&7u32.to_le_bytes());
+        x[0x254..0x258].copy_from_slice(&10u32.to_le_bytes());
         assert!(inspect_decrypted_nca(&mut Cursor::new(x)).is_err());
     }
 }
