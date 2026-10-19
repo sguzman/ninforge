@@ -5,7 +5,8 @@ use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
 use ninforge::package::{
-    audit_switch_package, audit_switch_package_with_hashes, HashStatus, MatchStatus, PackageAudit,
+    audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
+    HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
@@ -228,9 +229,9 @@ Usage:
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
   ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
-  ninforge package audit <nsp-or-xci> <cnmt> [--nacp <file>] [--main-nso <file>] [--hash] [--json]
+  ninforge package audit <nsp-or-xci> <cnmt> [--nacp <file>] [--main-nso <file>] [--headers] [--hash] [--json]
                                            Inspect NSP + explicit external metadata
-  ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--hash] [--json]
+  ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--headers] [--hash] [--json]
                                            Discover unique plaintext metadata sidecars
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
@@ -299,6 +300,7 @@ fn report_json(report: &Report, include_entries: bool) -> String {
 struct PackageFlags<'a> {
     json: bool,
     hash: bool,
+    headers: bool,
     nacp: Option<&'a str>,
     main_nso: Option<&'a str>,
 }
@@ -314,6 +316,10 @@ fn parse_package_flags(args: &[String]) -> Result<PackageFlags<'_>, Box<dyn std:
             }
             "--hash" if !flags.hash => {
                 flags.hash = true;
+                i += 1;
+            }
+            "--headers" if !flags.headers => {
+                flags.headers = true;
                 i += 1;
             }
             "--nacp" if flags.nacp.is_none() => {
@@ -345,12 +351,12 @@ fn parse_package_flags(args: &[String]) -> Result<PackageFlags<'_>, Box<dyn std:
 fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [nsp, cnmt, flags @ ..] = args else {
         return Err(
-            "usage: ninforge package audit <nsp-or-xci> <cnmt> [--nacp <file>] [--main-nso <file>] [--json]"
+            "usage: ninforge package audit <nsp-or-xci> <cnmt> [--nacp <file>] [--main-nso <file>] [--headers] [--hash] [--json]"
                 .into(),
         );
     };
     let parsed = parse_package_flags(flags)?;
-    let mut audit = load_package_audit(Path::new(nsp), Path::new(cnmt), parsed.hash)?;
+    let mut audit = load_package_audit(Path::new(nsp), Path::new(cnmt), parsed.hash, parsed.headers)?;
     if let Some(path) = parsed.nacp {
         audit.attach_nacp(&mut File::open(path)?)?;
     }
@@ -369,10 +375,13 @@ fn load_package_audit(
     nsp: &Path,
     cnmt: &Path,
     hash: bool,
+    headers: bool,
 ) -> Result<PackageAudit, Box<dyn std::error::Error>> {
     let mut archive = File::open(nsp)?;
     let mut metadata = File::open(cnmt)?;
-    if hash {
+    if headers {
+        Ok(audit_switch_package_with_headers(&mut archive, &mut metadata, hash)?)
+    } else if hash {
         Ok(audit_switch_package_with_hashes(
             &mut archive,
             &mut metadata,
@@ -387,7 +396,7 @@ fn load_package_audit(
 fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [nsp, metadata_dir, flags @ ..] = args else {
         return Err(
-            "usage: ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--hash] [--json]"
+            "usage: ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--headers] [--hash] [--json]"
                 .into(),
         );
     };
@@ -399,7 +408,7 @@ fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Erro
         );
     }
     let sidecars = discover_metadata_dir(Path::new(metadata_dir))?;
-    let mut audit = load_package_audit(Path::new(nsp), &sidecars.cnmt, parsed.hash)?;
+    let mut audit = load_package_audit(Path::new(nsp), &sidecars.cnmt, parsed.hash, parsed.headers)?;
     if let Some(path) = sidecars.nacp {
         audit.attach_nacp(&mut File::open(path)?)?;
     }
@@ -423,9 +432,10 @@ fn print_package_audit(audit: &PackageAudit) {
     println!("Content referenced: {}", audit.referenced.len());
     for content in &audit.referenced {
         println!(
-            "{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
             content.status.name(),
             content.hash_status.name(),
+            content.header_status.name(),
             content.content_type,
             content.id,
             content.expected_size,
@@ -437,6 +447,12 @@ fn print_package_audit(audit: &PackageAudit) {
         audit.count(MatchStatus::Present),
         audit.referenced.len()
     );
+    if audit.headers_requested {
+        println!("Readable NCA header consistency: {} of {} entries (not authenticated)",
+            audit.header_count(HeaderStatus::Consistent), audit.referenced.len());
+    } else {
+        println!("NCA headers not checked (opt in with --headers)");
+    }
     if audit.hashing_requested {
         println!(
             "SHA-256 matches against supplied CNMT: {} / {} (CNMT not authenticated)",
@@ -461,7 +477,7 @@ fn print_package_audit(audit: &PackageAudit) {
 
 fn package_audit_json(audit: &PackageAudit) -> String {
     let mut out = format!(
-        r#"{{"package_format":{},"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"hashing_requested":{},"hashes_match_supplied_cnmt":{},"hash_matched":{},"hash_mismatched":{},"hash_unavailable":{},"contents":["#,
+        r#"{{"package_format":{},"title_id":{},"version":{},"meta_type":{},"metadata_source":"external_cnmt_unverified","package_entries":{},"content_count":{},"complete_by_size":{},"present":{},"missing":{},"size_mismatch":{},"compressed_unsupported":{},"ambiguous":{},"hashes_verified":false,"hashing_requested":{},"hashes_match_supplied_cnmt":{},"hash_matched":{},"hash_mismatched":{},"hash_unavailable":{},"headers_requested":{},"header_consistent":{},"header_type_mismatch":{},"header_size_mismatch":{},"header_unavailable":{},"header_malformed":{},"contents":["#,
         json_string(audit.package_format.name()),
         json_string(&audit.title_id),
         json_string(&audit.version),
@@ -479,6 +495,12 @@ fn package_audit_json(audit: &PackageAudit) -> String {
         audit.hash_count(HashStatus::Matched),
         audit.hash_count(HashStatus::Mismatched),
         audit.hash_count(HashStatus::Unavailable),
+        audit.headers_requested,
+        audit.header_count(HeaderStatus::Consistent),
+        audit.header_count(HeaderStatus::TypeMismatch),
+        audit.header_count(HeaderStatus::SizeMismatch),
+        audit.header_count(HeaderStatus::Unavailable),
+        audit.header_count(HeaderStatus::Malformed),
     );
     for (index, content) in audit.referenced.iter().enumerate() {
         if index != 0 {
@@ -486,13 +508,17 @@ fn package_audit_json(audit: &PackageAudit) -> String {
         }
         write!(
             &mut out,
-            r#"{{"id":{},"type":{},"expected_size":{},"expected_sha256":{},"actual_sha256":{},"hash_status":{},"expected_filename":{},"package_filename":{},"package_size":{},"status":{}}}"#,
+            r#"{{"id":{},"type":{},"expected_size":{},"expected_sha256":{},"actual_sha256":{},"hash_status":{},"header_status":{},"header_program_id":{},"header_content_type":{},"header_declared_size":{},"expected_filename":{},"package_filename":{},"package_size":{},"status":{}}}"#,
             json_string(&content.id),
             json_string(content.content_type),
             content.expected_size,
             json_string(&content.expected_sha256),
             content.actual_sha256.as_ref().map_or("null".to_string(), |s| json_string(s)),
             json_string(content.hash_status.name()),
+            json_string(content.header_status.name()),
+            content.header_program_id.as_ref().map_or("null".to_string(), |v| json_string(v)),
+            content.header_content_type.as_ref().map_or("null".to_string(), |v| json_string(v)),
+            content.header_declared_size.map_or("null".to_string(), |n| n.to_string()),
             json_string(&content.expected_filename),
             content.package_filename.as_ref().map_or("null".to_string(), |s| json_string(s)),
             content.package_size.map_or("null".to_string(), |n| n.to_string()),
@@ -562,6 +588,7 @@ mod tests {
             meta_type: "patch".into(),
             package_entries: 1,
             hashing_requested: false,
+            headers_requested: false,
             referenced: vec![ninforge::package::ContentMatch {
                 id: "0011".into(),
                 content_type: "program",
@@ -573,6 +600,10 @@ mod tests {
                 expected_sha256: "00".repeat(32),
                 actual_sha256: None,
                 hash_status: HashStatus::NotChecked,
+                header_status: HeaderStatus::NotChecked,
+                header_program_id: None,
+                header_content_type: None,
+                header_declared_size: None,
             }],
             unreferenced_nca: vec!["other.nca".into()],
             external_evidence: vec![ninforge::package::ExternalEvidence {
@@ -589,6 +620,8 @@ mod tests {
         assert!(json.contains(r#""hashes_verified":false"#));
         assert!(json.contains(r#""hashing_requested":false"#));
         assert!(json.contains(r#""hash_status":"not_checked""#));
+        assert!(json.contains(r#""headers_requested":false"#));
+        assert!(json.contains(r#""header_status":"not_checked""#));
         assert!(json.contains(r#""unreferenced_nca":["other.nca"]"#));
         assert!(json.contains(r#""linked_to_package":false"#));
         assert!(json.contains(r#""provenance":"user_designated_main_unverified""#));
@@ -601,6 +634,7 @@ mod tests {
             "--main-nso".into(),
             "main.nso".into(),
             "--hash".into(),
+            "--headers".into(),
             "--json".into(),
             "--nacp".into(),
             "control.nacp".into(),
@@ -610,9 +644,11 @@ mod tests {
         assert_eq!(flags.main_nso, Some("main.nso"));
         assert!(flags.json);
         assert!(flags.hash);
+        assert!(flags.headers);
         assert!(parse_package_flags(&["--nacp".into()]).is_err());
         assert!(parse_package_flags(&["--json".into(), "--json".into()]).is_err());
         assert!(parse_package_flags(&["--hash".into(), "--hash".into()]).is_err());
+        assert!(parse_package_flags(&["--headers".into(), "--headers".into()]).is_err());
         assert!(parse_package_flags(&["--bogus".into()]).is_err());
     }
 
