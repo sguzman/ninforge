@@ -55,3 +55,7 @@ The `package audit-dir` shortcut never recurses, never follows symlinks, and ref
 ## XCI package correlation
 
 Synthetic nested XCI/HFS0 root-and-secure partitions are used to verify CNMT reference matching, SHA-256 checks of NCA byte ranges and rejection of tempting decoy names outside `root/secure/`. The older `audit_nsp` API continues rejecting XCI, while new generic package-audit APIs and the CLI support both NSP and XCI. A matched hash confirms only correspondence to the separately supplied, unauthenticated plaintext CNMT.
+
+## Plaintext NCA header cross-check
+
+`package audit --headers` checks only uniquely identified NCA entries using a bounded first-0x400-byte read. Unit tests cover matching type and size, separately reported NCA program IDs, mismatched content type or size, raw encrypted header detection as unavailable, malformed plaintext NCA headers, and missing referenced NCAs. This remains separate from the optional full SHA-256 digest comparison: neither step authenticates the external CNMT or establishes ownership of an attached main NSO.
