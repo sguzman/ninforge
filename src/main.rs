@@ -4,7 +4,9 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::package::{audit_switch_package, audit_switch_package_with_hashes, HashStatus, MatchStatus, PackageAudit};
+use ninforge::package::{
+    audit_switch_package, audit_switch_package_with_hashes, HashStatus, MatchStatus, PackageAudit,
+};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -371,7 +373,10 @@ fn load_package_audit(
     let mut archive = File::open(nsp)?;
     let mut metadata = File::open(cnmt)?;
     if hash {
-        Ok(audit_switch_package_with_hashes(&mut archive, &mut metadata)?)
+        Ok(audit_switch_package_with_hashes(
+            &mut archive,
+            &mut metadata,
+        )?)
     } else {
         Ok(audit_switch_package(&mut archive, &mut metadata)?)
     }
@@ -382,7 +387,8 @@ fn load_package_audit(
 fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let [nsp, metadata_dir, flags @ ..] = args else {
         return Err(
-            "usage: ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--hash] [--json]".into(),
+            "usage: ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--hash] [--json]"
+                .into(),
         );
     };
     let parsed = parse_package_flags(flags)?;

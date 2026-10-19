@@ -248,11 +248,17 @@ fn cli_xci_secure_content_matches_supplied_cnmt_hash() {
         .args(["--hash", "--json"])
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""package_format":"Switch XCI""#));
     assert!(json.contains(r#""hash_status":"matched""#));
-    assert!(json.contains(r#""package_filename":"root/secure/11111111111111111111111111111111.nca""#));
+    assert!(
+        json.contains(r#""package_filename":"root/secure/11111111111111111111111111111111.nca""#)
+    );
 }
 
 #[test]
@@ -268,7 +274,11 @@ fn cli_xci_audit_dir_discovers_external_cnmt() {
         .arg("--json")
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""package_format":"Switch XCI""#));
     assert!(json.contains(r#""hash_status":"not_checked""#));

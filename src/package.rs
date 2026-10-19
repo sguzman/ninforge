@@ -219,11 +219,18 @@ fn audit_package_internal<R: Read + Seek, C: Read + Seek>(
     {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
-            if nsp_only { "expected NSP/PFS0" }
-            else { "package audit requires NSP/PFS0 or XCI" },
+            if nsp_only {
+                "expected NSP/PFS0"
+            } else {
+                "package audit requires NSP/PFS0 or XCI"
+            },
         ));
     }
-    let secure_prefix = if package.format == Format::SwitchXci { "root/secure/" } else { "" };
+    let secure_prefix = if package.format == Format::SwitchXci {
+        "root/secure/"
+    } else {
+        ""
+    };
     let (metadata, references) = inspect_cnmt_with_content(cnmt)?;
     let get = |field: &str| -> io::Result<String> {
         metadata
@@ -622,7 +629,6 @@ mod tests {
         assert!(!audit.all_hashes_match_supplied_cnmt());
     }
 
-
     fn hfs0(items: &[(&str, &[u8])]) -> Vec<u8> {
         let names_len: usize = items.iter().map(|(name, _)| name.len() + 1).sum();
         let mut data = b"HFS0".to_vec();
@@ -644,7 +650,9 @@ mod tests {
             data.extend(name.as_bytes());
             data.push(0);
         }
-        for (_, bytes) in items { data.extend(*bytes); }
+        for (_, bytes) in items {
+            data.extend(*bytes);
+        }
         data
     }
 
@@ -668,9 +676,9 @@ mod tests {
             &[("normal", b"unrelated")],
         );
         let metadata = cnmt_with_hash(CONTENT_A, b"abc");
-        let audit = audit_switch_package_with_hashes(
-            &mut Cursor::new(xci), &mut Cursor::new(metadata),
-        ).unwrap();
+        let audit =
+            audit_switch_package_with_hashes(&mut Cursor::new(xci), &mut Cursor::new(metadata))
+                .unwrap();
         assert_eq!(audit.package_format, Format::SwitchXci);
         assert_eq!(audit.hash_count(HashStatus::Matched), 1);
         assert!(audit.all_hashes_match_supplied_cnmt());
@@ -682,14 +690,10 @@ mod tests {
 
     #[test]
     fn xci_does_not_match_decoy_nca_outside_secure_partition() {
-        let xci = xci_with_secure(
-            &[],
-            &[("11111111111111111111111111111111.nca", b"abc")],
-        );
+        let xci = xci_with_secure(&[], &[("11111111111111111111111111111111.nca", b"abc")]);
         let metadata = cnmt_with_hash(CONTENT_A, b"abc");
-        let audit = audit_switch_package(
-            &mut Cursor::new(xci), &mut Cursor::new(metadata),
-        ).unwrap();
+        let audit =
+            audit_switch_package(&mut Cursor::new(xci), &mut Cursor::new(metadata)).unwrap();
         assert_eq!(audit.count(MatchStatus::Missing), 1);
         assert!(audit.unreferenced_nca.is_empty());
         assert!(!audit.complete_by_size());
@@ -703,8 +707,10 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::InvalidInput);
         let nsp = nsp(&[("11111111111111111111111111111111.nca", b"x")]);
         let result = audit_switch_package(
-            &mut Cursor::new(nsp), &mut Cursor::new(cnmt(&[(CONTENT_A, 1, 1)])),
-        ).unwrap();
+            &mut Cursor::new(nsp),
+            &mut Cursor::new(cnmt(&[(CONTENT_A, 1, 1)])),
+        )
+        .unwrap();
         assert_eq!(result.package_format, Format::SwitchNsp);
         assert_eq!(result.count(MatchStatus::Present), 1);
     }
