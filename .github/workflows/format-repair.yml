@@ -1,0 +1,31 @@
+name: Ninforge temporary package format QA
+on:
+  push:
+    branches: [feat/bootstrap-format-inspection]
+permissions:
+  contents: write
+concurrency:
+  group: ninforge-package-format
+  cancel-in-progress: true
+jobs:
+  format-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+      - name: Commit formatted sources to feature branch only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/
+          if ! git diff --cached --quiet; then
+            git commit -m 'style: rustfmt package metadata audit'
+            git push origin HEAD:feat/bootstrap-format-inspection
+          fi
