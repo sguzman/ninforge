@@ -1,7 +1,7 @@
 //! Standalone binary for the Ninforge library. Pure std: no runtime dependencies.
 
-use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use ninforge::nacp::inspect_nacp;
+use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
@@ -111,9 +111,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn require_sections(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
     match report.format {
         Format::SwitchNsp | Format::SwitchHfs0 | Format::SwitchXci | Format::NintendoDs => Ok(()),
-        _ => {
-            Err("this operation supports Switch NSP/HFS0/XCI and Nintendo DS files".into())
-        }
+        _ => Err("this operation supports Switch NSP/HFS0/XCI and Nintendo DS files".into()),
     }
 }
 

@@ -8,10 +8,22 @@ use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 
 const SIZE: usize = 0x4000;
 const LANGUAGES: [&str; 16] = [
-    "american_english", "british_english", "japanese", "french",
-    "german", "latin_american_spanish", "spanish", "italian",
-    "dutch", "canadian_french", "portuguese", "russian",
-    "korean", "traditional_chinese", "simplified_chinese", "brazilian_portuguese",
+    "american_english",
+    "british_english",
+    "japanese",
+    "french",
+    "german",
+    "latin_american_spanish",
+    "spanish",
+    "italian",
+    "dutch",
+    "canadian_french",
+    "portuguese",
+    "russian",
+    "korean",
+    "traditional_chinese",
+    "simplified_chinese",
+    "brazilian_portuguese",
 ];
 
 fn invalid(message: &'static str) -> io::Error {
@@ -19,7 +31,8 @@ fn invalid(message: &'static str) -> io::Error {
 }
 fn field(bytes: &[u8]) -> io::Result<String> {
     let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
-    let text = std::str::from_utf8(&bytes[..end]).map_err(|_| invalid("NACP invalid UTF-8 field"))?;
+    let text =
+        std::str::from_utf8(&bytes[..end]).map_err(|_| invalid("NACP invalid UTF-8 field"))?;
     if text.chars().any(|c| c.is_control() && c != '\t') {
         return Err(invalid("NACP control characters inside text field"));
     }
@@ -38,17 +51,24 @@ pub fn inspect_nacp<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
     input.read_exact(&mut data)?;
 
     if data[0x3215] != 0 {
-        return Err(invalid("compressed or unknown NACP title format unsupported"));
+        return Err(invalid(
+            "compressed or unknown NACP title format unsupported",
+        ));
     }
     let mut report = Report {
-        format: Format::SwitchNacp, bytes: len, metadata: Vec::new(), entries: Vec::new(),
+        format: Format::SwitchNacp,
+        bytes: len,
+        metadata: Vec::new(),
+        entries: Vec::new(),
     };
     let version = field(&data[0x3060..0x3070])?;
     if !version.is_empty() {
         report.metadata.push(("display_version".into(), version));
     }
     let flags = u32::from_le_bytes(data[0x302c..0x3030].try_into().unwrap());
-    report.metadata.push(("supported_language_flags".into(), format!("0x{flags:08x}")));
+    report
+        .metadata
+        .push(("supported_language_flags".into(), format!("0x{flags:08x}")));
     for (index, language) in LANGUAGES.iter().enumerate() {
         let start = index * 0x300;
         let title = field(&data[start..start + 0x200])?;
@@ -57,16 +77,23 @@ pub fn inspect_nacp<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
             report.metadata.push((format!("title_{language}"), title));
         }
         if !publisher.is_empty() {
-            report.metadata.push((format!("publisher_{language}"), publisher));
+            report
+                .metadata
+                .push((format!("publisher_{language}"), publisher));
         }
     }
     if !report.metadata.iter().any(|(k, _)| k.starts_with("title_")) {
         return Err(invalid("NACP has no readable application titles"));
     }
-    for (key, at) in [("addon_content_base_id", 0x3070), ("save_data_owner_id", 0x3078)] {
+    for (key, at) in [
+        ("addon_content_base_id", 0x3070),
+        ("save_data_owner_id", 0x3078),
+    ] {
         let value = u64::from_le_bytes(data[at..at + 8].try_into().unwrap());
         if value != 0 {
-            report.metadata.push((key.into(), format!("0x{value:016x}")));
+            report
+                .metadata
+                .push((key.into(), format!("0x{value:016x}")));
         }
     }
     Ok(report)
@@ -90,10 +117,18 @@ mod tests {
     fn parses_title_publisher_version_and_owner() {
         let report = inspect_nacp(&mut Cursor::new(fixture())).unwrap();
         assert_eq!(report.format, Format::SwitchNacp);
-        assert!(report.metadata.contains(&("title_american_english".into(), "Homebrew Demo".into())));
-        assert!(report.metadata.contains(&("publisher_american_english".into(), "Open Homebrew".into())));
-        assert!(report.metadata.contains(&("display_version".into(), "1.2.3".into())));
-        assert!(report.metadata.contains(&("supported_language_flags".into(), "0x00000021".into())));
+        assert!(report
+            .metadata
+            .contains(&("title_american_english".into(), "Homebrew Demo".into())));
+        assert!(report
+            .metadata
+            .contains(&("publisher_american_english".into(), "Open Homebrew".into())));
+        assert!(report
+            .metadata
+            .contains(&("display_version".into(), "1.2.3".into())));
+        assert!(report
+            .metadata
+            .contains(&("supported_language_flags".into(), "0x00000021".into())));
     }
     #[test]
     fn refuses_truncated_compressed_and_invalid_utf8() {

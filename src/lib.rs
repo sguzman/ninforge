@@ -3,9 +3,9 @@
 //! Detection is based on content signatures and conservative header checks, not
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
-mod nds;
 mod hfs0;
 pub mod nacp;
+mod nds;
 pub mod saves;
 
 use std::collections::HashSet;
@@ -58,7 +58,11 @@ impl Format {
 
     pub fn console(self) -> &'static str {
         match self {
-            Self::SwitchNsp | Self::SwitchHfs0 | Self::SwitchNacp | Self::SwitchXci | Self::SwitchNca => "switch",
+            Self::SwitchNsp
+            | Self::SwitchHfs0
+            | Self::SwitchNacp
+            | Self::SwitchXci
+            | Self::SwitchNca => "switch",
             Self::Nintendo3dsCartridge => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii => "wii",
