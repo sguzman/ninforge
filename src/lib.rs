@@ -290,6 +290,16 @@ fn parse_pfs0<R: Read + Seek>(reader: &mut R, length: u64) -> io::Result<Vec<Ent
         let name = std::str::from_utf8(name_bytes)
             .map_err(|_| invalid("PFS0 filename is not UTF-8"))?
             .to_string();
+        // Like HFS0, PFS0 names are archive entry identifiers, not paths.
+        // Reject directory traversal and host-path delimiters at inspection time.
+        if name == "."
+            || name == ".."
+            || name
+                .bytes()
+                .any(|byte| byte == b'/' || byte == b'\\' || byte < 0x20 || byte == 0x7f)
+        {
+            return Err(invalid("PFS0 unsafe filename"));
+        }
         if !names.insert(name.clone()) {
             return Err(invalid("PFS0 has duplicate filenames"));
         }
@@ -414,6 +424,23 @@ mod tests {
             report(bytes).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn pfs0_refuses_paths_traversal_and_control_characters() {
+        for name in [
+            ".", "..", "../outside.nca", "dir/inside.nca",
+            "dir\\inside.nca", "control\nname.nca", "carriage\rreturn.nca",
+        ] {
+            let bytes = synthetic_pfs0(name, b"safe fixture");
+            assert_eq!(
+                report(bytes).unwrap_err().kind(),
+                io::ErrorKind::InvalidData,
+                "accepted dangerous PFS0 entry name: {name:?}"
+            );
+        }
+        let valid = report(synthetic_pfs0("safe..name.nca", b"fixture")).unwrap();
+        assert_eq!(valid.entries[0].name, "safe..name.nca");
     }
 
     #[test]
