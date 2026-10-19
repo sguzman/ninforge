@@ -1,4 +1,4 @@
-//! Keyless, read-only join between a PFS0 NSP table and a supplied plaintext CNMT.
+//! Keyless, read-only join between NSP or XCI contents and a supplied plaintext CNMT.
 //!
 //! This is an inventory cross-check, NOT title authentication, hash validation,
 //! decryption, signature validation or proof that two files originate together.
@@ -82,6 +82,7 @@ pub struct ExternalEvidence {
 pub struct PackageAudit {
     /// These title/version fields come from an independently supplied,
     /// *unverified* plaintext CNMT, not directly from the NSP.
+    pub package_format: Format,
     pub title_id: String,
     pub version: String,
     pub meta_type: String,
@@ -175,7 +176,16 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
     nsp: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
-    audit_nsp_internal(nsp, cnmt, false)
+    audit_package_internal(nsp, cnmt, false, true)
+}
+
+/// Inspect either NSP/PFS0 or XCI secure partition entries using the same
+/// external CNMT. Does not treat unverified metadata as title authentication.
+pub fn audit_switch_package<R: Read + Seek, C: Read + Seek>(
+    package: &mut R,
+    cnmt: &mut C,
+) -> io::Result<PackageAudit> {
+    audit_package_internal(package, cnmt, false, false)
 }
 
 /// Opt-in, bounded-memory, streaming SHA-256 verification of NSP NCA entry
@@ -185,21 +195,35 @@ pub fn audit_nsp_with_hashes<R: Read + Seek, C: Read + Seek>(
     nsp: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
-    audit_nsp_internal(nsp, cnmt, true)
+    audit_package_internal(nsp, cnmt, true, true)
 }
 
-fn audit_nsp_internal<R: Read + Seek, C: Read + Seek>(
-    nsp: &mut R,
+/// Opt-in full-content SHA-256 check against externally supplied CNMT hashes
+/// for either NSP or XCI. Only files in the XCI secure partition are matched.
+pub fn audit_switch_package_with_hashes<R: Read + Seek, C: Read + Seek>(
+    package: &mut R,
+    cnmt: &mut C,
+) -> io::Result<PackageAudit> {
+    audit_package_internal(package, cnmt, true, false)
+}
+
+fn audit_package_internal<R: Read + Seek, C: Read + Seek>(
+    package_bytes: &mut R,
     cnmt: &mut C,
     verify_hashes: bool,
+    nsp_only: bool,
 ) -> io::Result<PackageAudit> {
-    let package = inspect(nsp)?;
-    if package.format != Format::SwitchNsp {
+    let package = inspect(package_bytes)?;
+    if !matches!(package.format, Format::SwitchNsp | Format::SwitchXci)
+        || (nsp_only && package.format != Format::SwitchNsp)
+    {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
-            "package audit currently requires NSP/PFS0",
+            if nsp_only { "expected NSP/PFS0" }
+            else { "package audit requires NSP/PFS0 or XCI" },
         ));
     }
+    let secure_prefix = if package.format == Format::SwitchXci { "root/secure/" } else { "" };
     let (metadata, references) = inspect_cnmt_with_content(cnmt)?;
     let get = |field: &str| -> io::Result<String> {
         metadata
@@ -213,7 +237,7 @@ fn audit_nsp_internal<R: Read + Seek, C: Read + Seek>(
     let mut matched_names = HashSet::new();
     let mut matches = Vec::with_capacity(references.len());
     for record in &references {
-        let mut result = match_record(&package.entries, record);
+        let mut result = match_record(&package.entries, record, secure_prefix);
         if let Some(ref filename) = result.package_filename {
             matched_names.insert(filename.to_ascii_lowercase());
         }
@@ -228,7 +252,7 @@ fn audit_nsp_internal<R: Read + Seek, C: Read + Seek>(
                     .iter()
                     .find(|entry| entry.name == name)
                     .ok_or_else(|| invalid("present entry missing from parsed NSP"))?;
-                let digest = hash_entry(nsp, entry)?;
+                let digest = hash_entry(package_bytes, entry)?;
                 result.actual_sha256 = Some(sha256_hex(&digest));
                 result.hash_status = if digest == record.expected_sha256 {
                     HashStatus::Matched
@@ -250,13 +274,17 @@ fn audit_nsp_internal<R: Read + Seek, C: Read + Seek>(
         .iter()
         .filter(|entry| {
             let name = entry.name.to_ascii_lowercase();
-            name.ends_with(".nca") && !name.ends_with(".cnmt.nca") && !matched_names.contains(&name)
+            name.starts_with(secure_prefix)
+                && name.ends_with(".nca")
+                && !name.ends_with(".cnmt.nca")
+                && !matched_names.contains(&name)
         })
         .map(|entry| entry.name.clone())
         .collect();
     unreferenced_nca.sort();
 
     Ok(PackageAudit {
+        package_format: package.format,
         title_id: get("title_id")?,
         version: get("version")?,
         meta_type: get("meta_type")?,
@@ -287,7 +315,7 @@ fn hash_entry<R: Read + Seek>(nsp: &mut R, entry: &Entry) -> io::Result<[u8; 32]
     Ok(sha.finalize().into())
 }
 
-fn match_record(entries: &[Entry], record: &ContentRecord) -> ContentMatch {
+fn match_record(entries: &[Entry], record: &ContentRecord, prefix: &str) -> ContentMatch {
     let filename = format!("{}.nca", record.id.to_ascii_lowercase());
     // Content Meta NCAs conventionally use ".cnmt.nca".
     let expected = if record.content_type == "meta" {
@@ -295,6 +323,7 @@ fn match_record(entries: &[Entry], record: &ContentRecord) -> ContentMatch {
     } else {
         filename
     };
+    let expected = format!("{prefix}{expected}");
     let direct: Vec<&Entry> = entries
         .iter()
         .filter(|entry| entry.name.eq_ignore_ascii_case(&expected))
@@ -591,6 +620,93 @@ mod tests {
         assert_eq!(audit.hash_count(HashStatus::NotChecked), 1);
         assert!(audit.referenced[0].actual_sha256.is_none());
         assert!(!audit.all_hashes_match_supplied_cnmt());
+    }
+
+
+    fn hfs0(items: &[(&str, &[u8])]) -> Vec<u8> {
+        let names_len: usize = items.iter().map(|(name, _)| name.len() + 1).sum();
+        let mut data = b"HFS0".to_vec();
+        data.extend((items.len() as u32).to_le_bytes());
+        data.extend((names_len as u32).to_le_bytes());
+        data.extend(0u32.to_le_bytes());
+        let mut relative = 0u64;
+        let mut name_offset = 0u32;
+        for (name, bytes) in items {
+            data.extend(relative.to_le_bytes());
+            data.extend((bytes.len() as u64).to_le_bytes());
+            data.extend(name_offset.to_le_bytes());
+            data.extend(0u32.to_le_bytes());
+            data.extend([0u8; 40]);
+            relative += bytes.len() as u64;
+            name_offset += name.len() as u32 + 1;
+        }
+        for (name, _) in items {
+            data.extend(name.as_bytes());
+            data.push(0);
+        }
+        for (_, bytes) in items { data.extend(*bytes); }
+        data
+    }
+
+    fn xci_with_secure(secure: &[(&str, &[u8])], extra: &[(&str, &[u8])]) -> Vec<u8> {
+        let secure_partition = hfs0(secure);
+        let mut root_files: Vec<(&str, &[u8])> = vec![("secure", &secure_partition)];
+        root_files.extend_from_slice(extra);
+        let root = hfs0(&root_files);
+        let mut xci = vec![0u8; 0x200];
+        xci[0x100..0x104].copy_from_slice(b"HEAD");
+        xci[0x130..0x138].copy_from_slice(&0x200u64.to_le_bytes());
+        xci[0x138..0x140].copy_from_slice(&0x50u64.to_le_bytes());
+        xci.extend(root);
+        xci
+    }
+
+    #[test]
+    fn xci_secure_partitions_support_digest_matching() {
+        let xci = xci_with_secure(
+            &[("11111111111111111111111111111111.nca", b"abc")],
+            &[("normal", b"unrelated")],
+        );
+        let metadata = cnmt_with_hash(CONTENT_A, b"abc");
+        let audit = audit_switch_package_with_hashes(
+            &mut Cursor::new(xci), &mut Cursor::new(metadata),
+        ).unwrap();
+        assert_eq!(audit.package_format, Format::SwitchXci);
+        assert_eq!(audit.hash_count(HashStatus::Matched), 1);
+        assert!(audit.all_hashes_match_supplied_cnmt());
+        assert_eq!(
+            audit.referenced[0].package_filename.as_deref(),
+            Some("root/secure/11111111111111111111111111111111.nca"),
+        );
+    }
+
+    #[test]
+    fn xci_does_not_match_decoy_nca_outside_secure_partition() {
+        let xci = xci_with_secure(
+            &[],
+            &[("11111111111111111111111111111111.nca", b"abc")],
+        );
+        let metadata = cnmt_with_hash(CONTENT_A, b"abc");
+        let audit = audit_switch_package(
+            &mut Cursor::new(xci), &mut Cursor::new(metadata),
+        ).unwrap();
+        assert_eq!(audit.count(MatchStatus::Missing), 1);
+        assert!(audit.unreferenced_nca.is_empty());
+        assert!(!audit.complete_by_size());
+    }
+
+    #[test]
+    fn old_nsp_api_still_refuses_xci_and_generic_api_accepts_nsp() {
+        let xci = xci_with_secure(&[], &[]);
+        let meta = cnmt(&[(CONTENT_A, 1, 1)]);
+        let error = audit_nsp(&mut Cursor::new(xci), &mut Cursor::new(meta)).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+        let nsp = nsp(&[("11111111111111111111111111111111.nca", b"x")]);
+        let result = audit_switch_package(
+            &mut Cursor::new(nsp), &mut Cursor::new(cnmt(&[(CONTENT_A, 1, 1)])),
+        ).unwrap();
+        assert_eq!(result.package_format, Format::SwitchNsp);
+        assert_eq!(result.count(MatchStatus::Present), 1);
     }
 
     #[test]
