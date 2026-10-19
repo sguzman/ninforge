@@ -308,7 +308,7 @@ mod tests {
             title_id:"0100123456788000".into(),version:0,meta_type:"application".into(),
             bundles:vec!["a".into(),"b".into()],conflicting_content:false,
         };
-        let same=summarize_record(&record(None,true),&[duplicate.clone()]);
+        let same=summarize_record(&record(None,true),std::slice::from_ref(&duplicate));
         assert_eq!(same.release,ReleaseEvidence::DuplicateSameCnmt);
         assert_eq!(same.cheat_target,CheatTarget::UnverifiedCandidateOnly);
         let conflicting=VersionCollision{conflicting_content:true,..duplicate};
