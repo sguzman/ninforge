@@ -8,8 +8,9 @@
 use crate::cnmt::{inspect_cnmt_with_content, ContentRecord};
 use crate::nacp::inspect_nacp;
 use crate::{inspect, Entry, Format};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::io::{self, ErrorKind, Read, Seek};
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidData, message)
@@ -23,6 +24,25 @@ pub enum MatchStatus {
     CompressedUnsupported,
     Ambiguous,
 }
+/// SHA-256 comparison status relative to an untrusted, user-supplied CNMT.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashStatus {
+    NotChecked,
+    Matched,
+    Mismatched,
+    Unavailable,
+}
+impl HashStatus {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::NotChecked => "not_checked",
+            Self::Matched => "matched",
+            Self::Mismatched => "mismatched",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
 impl MatchStatus {
     pub fn name(self) -> &'static str {
         match self {
@@ -44,6 +64,9 @@ pub struct ContentMatch {
     pub package_filename: Option<String>,
     pub package_size: Option<u64>,
     pub status: MatchStatus,
+    pub expected_sha256: String,
+    pub actual_sha256: Option<String>,
+    pub hash_status: HashStatus,
 }
 
 /// Metadata from a separately supplied, independently parsed file.
@@ -63,11 +86,25 @@ pub struct PackageAudit {
     pub version: String,
     pub meta_type: String,
     pub package_entries: usize,
+    pub hashing_requested: bool,
     pub referenced: Vec<ContentMatch>,
     pub unreferenced_nca: Vec<String>,
     pub external_evidence: Vec<ExternalEvidence>,
 }
 impl PackageAudit {
+    pub fn hash_count(&self, status: HashStatus) -> usize {
+        self.referenced.iter().filter(|content| content.hash_status == status).count()
+    }
+
+    /// True only when --hash was requested and every referenced NCA exactly
+    /// matched a SHA-256 asserted by the *supplied, unauthenticated* CNMT.
+    /// Never interpret this as proof that the CNMT is legitimate.
+    pub fn all_hashes_match_supplied_cnmt(&self) -> bool {
+        self.hashing_requested
+            && !self.referenced.is_empty()
+            && self.hash_count(HashStatus::Matched) == self.referenced.len()
+    }
+
     pub fn count(&self, status: MatchStatus) -> usize {
         self.referenced
             .iter()
@@ -135,6 +172,24 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
     nsp: &mut R,
     cnmt: &mut C,
 ) -> io::Result<PackageAudit> {
+    audit_nsp_internal(nsp, cnmt, false)
+}
+
+/// Opt-in, bounded-memory, streaming SHA-256 verification of NSP NCA entry
+/// bytes against digest assertions in an independently supplied plaintext CNMT.
+/// This does NOT authenticate the CNMT, title identity or signatures.
+pub fn audit_nsp_with_hashes<R: Read + Seek, C: Read + Seek>(
+    nsp: &mut R,
+    cnmt: &mut C,
+) -> io::Result<PackageAudit> {
+    audit_nsp_internal(nsp, cnmt, true)
+}
+
+fn audit_nsp_internal<R: Read + Seek, C: Read + Seek>(
+    nsp: &mut R,
+    cnmt: &mut C,
+    verify_hashes: bool,
+) -> io::Result<PackageAudit> {
     let package = inspect(nsp)?;
     if package.format != Format::SwitchNsp {
         return Err(io::Error::new(
@@ -155,9 +210,28 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
     let mut matched_names = HashSet::new();
     let mut matches = Vec::with_capacity(references.len());
     for record in &references {
-        let result = match_record(&package.entries, record);
+        let mut result = match_record(&package.entries, record);
         if let Some(ref filename) = result.package_filename {
             matched_names.insert(filename.to_ascii_lowercase());
+        }
+        if verify_hashes {
+            if result.status == MatchStatus::Present {
+                let name = result.package_filename.as_deref()
+                    .ok_or_else(|| invalid("present entry missing path"))?;
+                let entry = package.entries.iter().find(|entry| entry.name == name)
+                    .ok_or_else(|| invalid("present entry missing from parsed NSP"))?;
+                let digest = hash_entry(nsp, entry)?;
+                result.actual_sha256 = Some(sha256_hex(&digest));
+                result.hash_status = if digest == record.expected_sha256 {
+                    HashStatus::Matched
+                } else {
+                    HashStatus::Mismatched
+                };
+            } else {
+                // Missing, compressed, mismatched-size, or ambiguous files
+                // cannot be verified against the CNMT's full NCA hash.
+                result.hash_status = HashStatus::Unavailable;
+            }
         }
         matches.push(result);
     }
@@ -179,10 +253,30 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
         version: get("version")?,
         meta_type: get("meta_type")?,
         package_entries: package.entries.len(),
+        hashing_requested: verify_hashes,
         referenced: matches,
         unreferenced_nca,
         external_evidence: Vec::new(),
     })
+}
+
+fn sha256_hex(digest: &[u8; 32]) -> String {
+    digest.iter().map(|byte| format!("{byte:02X}")).collect()
+}
+
+fn hash_entry<R: Read + Seek>(nsp: &mut R, entry: &Entry) -> io::Result<[u8; 32]> {
+    nsp.seek(SeekFrom::Start(entry.offset))?;
+    let mut reader = nsp.take(entry.size);
+    let mut buffer = [0u8; 128 * 1024];
+    let mut sha = Sha256::new();
+    while reader.limit() != 0 {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            return Err(invalid("NSP entry truncated during SHA-256 verification"));
+        }
+        sha.update(&buffer[..count]);
+    }
+    Ok(sha.finalize().into())
 }
 
 fn match_record(entries: &[Entry], record: &ContentRecord) -> ContentMatch {
@@ -231,6 +325,9 @@ fn match_record(entries: &[Entry], record: &ContentRecord) -> ContentMatch {
         package_filename: actual.map(|entry| entry.name.clone()),
         package_size: actual.map(|entry| entry.size),
         status,
+        expected_sha256: sha256_hex(&record.expected_sha256),
+        actual_sha256: None,
+        hash_status: HashStatus::NotChecked,
     }
 }
 
@@ -426,6 +523,61 @@ mod tests {
                 .kind(),
             ErrorKind::InvalidInput
         );
+    }
+
+
+    fn cnmt_with_hash(id: [u8; 16], content: &[u8]) -> Vec<u8> {
+        let mut metadata = cnmt(&[(id, content.len() as u64, 1)]);
+        let hash = Sha256::digest(content);
+        metadata[0x30..0x50].copy_from_slice(&hash);
+        metadata
+    }
+
+    #[test]
+    fn streaming_sha256_matches_exact_content_and_not_nsp_wrapper() {
+        let body = b"abc";
+        let archive = nsp(&[("11111111111111111111111111111111.nca", body)]);
+        let metadata = cnmt_with_hash(CONTENT_A, body);
+        let audit = audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        assert_eq!(audit.count(MatchStatus::Present), 1);
+        assert_eq!(audit.hash_count(HashStatus::Matched), 1);
+        assert!(audit.all_hashes_match_supplied_cnmt());
+        assert_eq!(
+            audit.referenced[0].actual_sha256.as_deref(),
+            Some("BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD")
+        );
+    }
+
+    #[test]
+    fn hash_catches_same_length_tampering_undetected_by_size_only() {
+        let archive = nsp(&[("11111111111111111111111111111111.nca", b"abd")]);
+        let metadata = cnmt_with_hash(CONTENT_A, b"abc");
+        let audit = audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        assert!(audit.complete_by_size());
+        assert_eq!(audit.hash_count(HashStatus::Mismatched), 1);
+        assert!(!audit.all_hashes_match_supplied_cnmt());
+        assert_ne!(audit.referenced[0].actual_sha256.as_deref(), Some(audit.referenced[0].expected_sha256.as_str()));
+    }
+
+    #[test]
+    fn missing_and_compressed_content_cannot_be_hash_verified() {
+        let archive = nsp(&[("11111111111111111111111111111111.ncz", b"packed")]);
+        let metadata = cnmt_with_hash(CONTENT_A, b"abcdef");
+        let audit = audit_nsp_with_hashes(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        assert_eq!(audit.hash_count(HashStatus::Unavailable), 1);
+        assert!(audit.referenced[0].actual_sha256.is_none());
+        assert!(!audit.all_hashes_match_supplied_cnmt());
+    }
+
+    #[test]
+    fn default_audit_does_not_hash_files() {
+        let archive = nsp(&[("11111111111111111111111111111111.nca", b"abc")]);
+        let metadata = cnmt_with_hash(CONTENT_A, b"abc");
+        let audit = audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(metadata)).unwrap();
+        assert!(!audit.hashing_requested);
+        assert_eq!(audit.hash_count(HashStatus::NotChecked), 1);
+        assert!(audit.referenced[0].actual_sha256.is_none());
+        assert!(!audit.all_hashes_match_supplied_cnmt());
     }
 
     #[test]
