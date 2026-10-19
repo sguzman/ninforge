@@ -3,6 +3,7 @@
 use ninforge::cnmt::inspect_cnmt;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
+use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::package::{audit_nsp, audit_nsp_with_hashes, HashStatus, MatchStatus, PackageAudit};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
@@ -59,6 +60,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd, sub, rest @ ..] if cmd == "package" && sub == "audit" => {
             run_package_audit(rest)?;
+        }
+        [cmd, sub, rest @ ..] if cmd == "package" && sub == "audit-dir" => {
+            run_package_audit_dir(rest)?;
         }
         [cmd, sub, file] if cmd == "nca" && sub == "info" => {
             let report = inspect_decrypted_nca(&mut File::open(file)?)?;
@@ -224,6 +228,8 @@ Usage:
   ninforge nca info <file> [--json]        Inspect already-decrypted NCA header
   ninforge package audit <nsp> <cnmt> [--nacp <file>] [--main-nso <file>] [--hash] [--json]
                                            Inspect NSP + explicit external metadata
+  ninforge package audit-dir <nsp> <metadata-dir> [--hash] [--json]
+                                           Discover unique plaintext metadata sidecars
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
@@ -342,15 +348,55 @@ fn run_package_audit(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         );
     };
     let parsed = parse_package_flags(flags)?;
-    let mut audit = if parsed.hash {
-        audit_nsp_with_hashes(&mut File::open(nsp)?, &mut File::open(cnmt)?)?
-    } else {
-        audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?
-    };
+    let mut audit = load_package_audit(Path::new(nsp), Path::new(cnmt), parsed.hash)?;
     if let Some(path) = parsed.nacp {
         audit.attach_nacp(&mut File::open(path)?)?;
     }
     if let Some(path) = parsed.main_nso {
+        audit.attach_main_nso(&mut File::open(path)?)?;
+    }
+    if parsed.json {
+        println!("{}", package_audit_json(&audit));
+    } else {
+        print_package_audit(&audit);
+    }
+    Ok(())
+}
+
+
+fn load_package_audit(
+    nsp: &Path,
+    cnmt: &Path,
+    hash: bool,
+) -> Result<PackageAudit, Box<dyn std::error::Error>> {
+    let mut archive = File::open(nsp)?;
+    let mut metadata = File::open(cnmt)?;
+    if hash {
+        Ok(audit_nsp_with_hashes(&mut archive, &mut metadata)?)
+    } else {
+        Ok(audit_nsp(&mut archive, &mut metadata)?)
+    }
+}
+
+/// A deliberately conservative shortcut: read only files directly within the
+/// chosen metadata directory. Ambiguous CNMT/NACP candidates fail closed.
+fn run_package_audit_dir(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let [nsp, metadata_dir, flags @ ..] = args else {
+        return Err(
+            "usage: ninforge package audit-dir <nsp> <metadata-dir> [--hash] [--json]"
+                .into(),
+        );
+    };
+    let parsed = parse_package_flags(flags)?;
+    if parsed.nacp.is_some() || parsed.main_nso.is_some() {
+        return Err("audit-dir discovers metadata; use 'package audit' for explicit --nacp/--main-nso".into());
+    }
+    let sidecars = discover_metadata_dir(Path::new(metadata_dir))?;
+    let mut audit = load_package_audit(Path::new(nsp), &sidecars.cnmt, parsed.hash)?;
+    if let Some(path) = sidecars.nacp {
+        audit.attach_nacp(&mut File::open(path)?)?;
+    }
+    if let Some(path) = sidecars.main_nso {
         audit.attach_main_nso(&mut File::open(path)?)?;
     }
     if parsed.json {

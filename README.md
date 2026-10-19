@@ -32,6 +32,7 @@ ninforge nca info ./decrypted-header.bin --json
 ninforge cnmt info ./meta.cnmt --json
 ninforge package audit ./game.nsp ./metadata.cnmt --json
 ninforge package audit ./game.nsp ./metadata.cnmt --hash --json
+ninforge package audit-dir ./game.nsp ./readable-metadata --hash --json
 ninforge package audit ./game.nsp ./metadata.cnmt --nacp ./control.nacp --main-nso ./main.nso --json
 ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
@@ -46,6 +47,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
 - `nca info` accepts an explicitly supplied readable/decrypted NCA2 or NCA3 header (or full archive with plaintext header). Reports content type, program ID, distribution, rights ID when present and bounded filesystem section layout. Raw retail NCA headers remain encrypted; Ninforge does not decrypt them.
+- `package audit-dir <nsp> <metadata-dir>` searches only the selected directory for exactly one plaintext `*.cnmt`, at most one `*.nacp`, and an optional file explicitly named `main.nso`. Multiple CNMT/NACP candidates or symlinks are errors; other NSO modules are never guessed to be the main executable. Its output uses the existing package audit schema, with metadata still marked as unverified external evidence. Add `--hash` to check NSP bytes against CNMT assertions.
 - `package audit <nsp> <cnmt> --hash` streams SHA-256 over size-matched NCA entries inside the NSP and compares each hash with the content digest asserted by the supplied CNMT. Hashes are calculated only on request, in bounded memory, and no output or temporary game file is created. Per-record statuses distinguish `matched`, `mismatched`, `unavailable`, and `not_checked`. A match **does not prove the CNMT is genuine**. `hashes_verified` remains false in the JSON to avoid confusing content correlation with signature/title authentication; `hashes_match_supplied_cnmt` reports the narrower claim.
 - `package audit <nsp> <cnmt>` joins PFS0 file names and lengths to a **separately supplied, plaintext CNMT**. Add optional `--nacp <file>` for localized title/publisher/display version and `--main-nso <file>` for an explicitly user-designated NSO build ID. Both remain marked as **unverified external evidence**: supplying files together does not prove they belong to the same game, and a CNMT numeric version is not the NACP display version. It reports present, missing, size mismatches, ambiguous case collisions and unsupported compressed NCZ candidates. It does not decrypt the NSP, verify content hashes, or establish the CNMT's provenance. JSON output is meant for tooling such as Cheatarium.
 - `cnmt info` inspects a standalone plaintext CNMT for title ID, update version, referenced content IDs/sizes and related title metadata. Content IDs reference external NCAs rather than embedded bytes. Hashes are not verified.
@@ -66,6 +68,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 - `src/nacp.rs`: standalone NACP metadata inspection; no decryption or game file extraction.
 - `src/nca.rs`: decrypted NCA header reader with checked section bounds.
 - `src/cnmt.rs`: standalone CNMT metadata and typed content references.
+- `src/metadata_dir.rs`: non-recursive, fail-closed discovery of separately accessible metadata sidecars.
 - `src/package.rs`: read-only NSP/CNMT correlation, optional streaming SHA-256 checks, and explicit external metadata evidence.
 - `src/nds.rs`: header-declared DS regions and bounded FNT/FAT NitroFS traversal.
 - `src/saves.rs`: generic save candidate inventory and no-overwrite, file-by-file backup; no save editing or credentials.

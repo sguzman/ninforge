@@ -47,3 +47,7 @@ Package audit tests construct an entirely synthetic 0x4000-byte NACP and NSO0 he
 ## Optional full-content SHA-256 checks
 
 CNMT content records preserve their 32-byte SHA-256 digest. In-memory synthetic NSP/PFS0 fixtures prove that `--hash` hashes the NCA entry rather than the entire package wrapper (known SHA-256 of `abc`), detects same-length byte corruption, refuses to claim verification when files are missing or compressed, and skips hashing in the default fast audit. SHA-256 is implemented with the pure-Rust `sha2` crate. A digest match validates only correspondence to the user-provided CNMT, **not title authenticity**: external CNMT provenance and signatures remain unverified.
+
+## Metadata directory discovery
+
+The `package audit-dir` shortcut never recurses, never follows symlinks, and refuses competing `.cnmt` or `.nacp` sidecars. Only `main.nso` is considered the designated executable; unrelated `.nso` files are ignored. Tests cover unique, absent, duplicate, nested and symlink candidates. Supplying files in a common directory is not proof of common title provenance.
