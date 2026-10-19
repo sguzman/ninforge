@@ -21,7 +21,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/ Cargo.lock
+          git add src/ tests/ Cargo.lock
           if ! git diff --cached --quiet; then
             git commit -m 'build: format SHA-256 audit and lock Rust dependencies'
             git push origin HEAD:feat/bootstrap-format-inspection
