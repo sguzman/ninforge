@@ -8,7 +8,7 @@ use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
-use ninforge::title_inventory::{inventory_metadata_root, TitleInventory};
+use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -62,13 +62,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let copied = saves::backup(Path::new(source), Path::new(destination))?;
             println!("Backed up {copied} bytes to {destination} (source untouched)");
         }
-        [cmd, sub, root] if cmd == "titles" && sub == "inventory" => {
-            let catalog = inventory_metadata_root(Path::new(root))?;
-            print_title_inventory(&catalog);
-        }
-        [cmd, sub, root, flag] if cmd == "titles" && sub == "inventory" && flag == "--json" => {
-            let catalog = inventory_metadata_root(Path::new(root))?;
-            println!("{}", title_inventory_json(&catalog));
+        [cmd, sub, rest @ ..] if cmd == "titles" && sub == "inventory" => {
+            run_titles_inventory(rest)?;
         }
         [cmd, sub, rest @ ..] if cmd == "package" && sub == "audit" => {
             run_package_audit(rest)?;
@@ -243,7 +238,7 @@ Usage:
   ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--headers] [--hash] [--json]
                                            Discover unique plaintext metadata sidecars
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
-  ninforge titles inventory <root> [--json]
+  ninforge titles inventory <root> [--packages] [--hash] [--headers] [--json]
                                            Index immediate metadata bundle folders
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
@@ -576,9 +571,55 @@ fn package_audit_json(audit: &PackageAudit) -> String {
     out
 }
 
+
+#[derive(Default, Debug)]
+struct TitleInventoryFlags {
+    packages: bool,
+    hash: bool,
+    headers: bool,
+    json: bool,
+}
+
+fn parse_title_inventory_flags(args: &[String]) -> Result<TitleInventoryFlags, String> {
+    let mut flags = TitleInventoryFlags::default();
+    for option in args {
+        match option.as_str() {
+            "--packages" if !flags.packages => flags.packages = true,
+            "--hash" if !flags.hash => flags.hash = true,
+            "--headers" if !flags.headers => flags.headers = true,
+            "--json" if !flags.json => flags.json = true,
+            _ => return Err(format!("unknown or repeated titles inventory option: {option}")),
+        }
+    }
+    if (flags.hash || flags.headers) && !flags.packages {
+        return Err("--hash and --headers require --packages".into());
+    }
+    Ok(flags)
+}
+
+fn run_titles_inventory(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let [root, flags @ ..] = args else {
+        return Err("usage: ninforge titles inventory <root> [--packages] [--hash] [--headers] [--json]".into());
+    };
+    let flags = parse_title_inventory_flags(flags)?;
+    let catalog = inventory_metadata_root_with_packages(
+        Path::new(root), flags.packages, flags.hash, flags.headers
+    )?;
+    if flags.json {
+        println!("{}", title_inventory_json(&catalog));
+    } else {
+        print_title_inventory(&catalog);
+    }
+    Ok(())
+}
+
 fn print_title_inventory(catalog: &TitleInventory) {
     println!("External metadata bundles: {}", catalog.bundles_scanned);
     println!("Claimed application groups: {}", catalog.groups.len());
+    if catalog.package_audits_requested {
+        println!("Designated NSP/XCI packages audited: {}", catalog.packages_audited);
+        println!("Bundles without designated package: {}", catalog.packages_missing);
+    }
     println!(
         "Duplicate title/version/type sets: {}",
         catalog.version_collisions
@@ -600,6 +641,13 @@ fn print_title_inventory(catalog: &TitleInventory) {
                 record.version,
                 record.atmosphere_cheat_build_id.as_deref().unwrap_or("-")
             );
+            if let Some(ref audit) = record.package_audit {
+                println!("    package {}: {} of {} content entries match by size; {} of {} match CNMT SHA-256 (checked: {})",
+                    record.package_filename.as_deref().unwrap_or("-"),
+                    audit.count(MatchStatus::Present), audit.referenced.len(),
+                    audit.hash_count(HashStatus::Matched), audit.referenced.len(),
+                    audit.hashing_requested);
+            }
         }
         for collision in &group.version_collisions {
             println!(
@@ -622,8 +670,11 @@ fn option_json(value: Option<&str>) -> String {
 /// This is a local inventory, not a server-backed latest-version feed.
 fn title_inventory_json(catalog: &TitleInventory) -> String {
     let mut out = format!(
-        r#"{{"schema_version":1,"source":"external_plaintext_metadata_unverified","bundles_scanned":{},"application_groups":{},"version_collisions":{},"groups":["#,
+        r#"{{"schema_version":1,"source":"external_plaintext_metadata_unverified","bundles_scanned":{},"package_audits_requested":{},"packages_audited":{},"packages_missing":{},"application_groups":{},"version_collisions":{},"groups":["#,
         catalog.bundles_scanned,
+        catalog.package_audits_requested,
+        catalog.packages_audited,
+        catalog.packages_missing,
         catalog.groups.len(),
         catalog.version_collisions,
     );
@@ -644,7 +695,7 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
             }
             write!(
                 &mut out,
-                r#"{{"bundle":{},"title_id":{},"version":{},"meta_type":{},"application_group_id":{},"grouping_basis":{},"source_sha256":{},"content_count":{},"linked_application_id":{},"display_title":{},"display_version":{},"module_build_id":{},"atmosphere_cheat_build_id":{},"nacp_nso_link_verified":false}}"#,
+                r#"{{"bundle":{},"title_id":{},"version":{},"meta_type":{},"application_group_id":{},"grouping_basis":{},"source_sha256":{},"content_count":{},"linked_application_id":{},"display_title":{},"display_version":{},"module_build_id":{},"atmosphere_cheat_build_id":{},"nacp_nso_link_verified":false,"package_filename":{},"package_audit":{}}}"#,
                 json_string(&record.bundle),
                 json_string(&record.title_id),
                 record.version,
@@ -658,6 +709,8 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
                 option_json(record.display_version.as_deref()),
                 option_json(record.module_build_id.as_deref()),
                 option_json(record.atmosphere_cheat_build_id.as_deref()),
+                option_json(record.package_filename.as_deref()),
+                record.package_audit.as_ref().map_or_else(|| "null".to_string(), package_audit_json),
             ).expect("String write");
         }
         out.push_str(r#"],"version_collisions":["#);
@@ -709,6 +762,18 @@ fn json_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn title_inventory_flags_enforce_opt_in_expensive_reads() {
+        let options = vec!["--packages".into(), "--hash".into(), "--json".into()];
+        let flags = parse_title_inventory_flags(&options).unwrap();
+        assert!(flags.packages && flags.hash && flags.json);
+        assert!(!flags.headers);
+        assert!(parse_title_inventory_flags(&["--hash".into()]).is_err());
+        assert!(parse_title_inventory_flags(&["--headers".into()]).is_err());
+        assert!(parse_title_inventory_flags(&["--packages".into(), "--packages".into()]).is_err());
+        assert!(parse_title_inventory_flags(&["--unknown".into()]).is_err());
+    }
 
     #[test]
     fn package_json_distinguishes_missing_unverified_metadata() {
