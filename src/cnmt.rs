@@ -60,7 +60,7 @@ pub fn inspect_cnmt<R:Read+Seek>(r:&mut R)->io::Result<Report> {
     add(&mut report,"related_meta_count".into(),related_count);
     add(&mut report,"required_download_system_version".into(),u32at(&b,0x18));
     add(&mut report,"digest_verified".into(),false);
-    if matches!(kind,0x80|0x81|0x82|0x83) {
+    if matches!(kind,0x80..=0x83) {
         if ext.len()<8 {return Err(bad("CNMT application reference missing"));}
         let application=u64at(ext,0);
         if application!=0 {
