@@ -4,6 +4,7 @@
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
 mod nds;
+pub mod saves;
 
 use std::collections::HashSet;
 use std::fmt;

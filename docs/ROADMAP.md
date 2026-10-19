@@ -35,3 +35,7 @@ Within each phase, deliver: recognition -> trustworthy metadata -> validated dir
 - CI exercises good and malformed **synthetic** fixtures; repo asset audit passes.
 - Documentation accurately distinguishes detected, partially parsed, and unsupported formats.
 - No commercial ROMs, saves, or console keys in any tracked file or release artifact.
+
+## Save inventory MVP
+
+Implemented: extension-based, read-only candidate enumeration plus explicit, non-overwriting single-file backup. **Not implemented**: automatic emulator discovery, save-file format validation, game-to-save matching, save editing, or directory-wide transactional backups. Those require separate platform adapters and adversarial tests.

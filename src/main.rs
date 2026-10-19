@@ -1,6 +1,6 @@
 //! Standalone binary for the Ninforge library. Pure std: no runtime dependencies.
 
-use ninforge::{extract_entry, inspect, Entry, Format, Report};
+use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
@@ -40,6 +40,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let report = inspect(&mut File::open(file)?)?;
             require_sections(&report)?;
             println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
+        }
+        [cmd, sub, root] if cmd == "saves" && sub == "scan" => save_scan(Path::new(root), false)?,
+        [cmd, sub, root, flag] if cmd == "saves" && sub == "scan" && flag == "--json" => save_scan(Path::new(root), true)?,
+        [cmd, sub, source, destination] if cmd == "saves" && sub == "backup" => {
+            let copied = saves::backup(Path::new(source), Path::new(destination))?;
+            println!("Backed up {copied} bytes to {destination} (source untouched)");
         }
         [cmd, directory] if cmd == "scan" => scan(Path::new(directory), false)?,
         [cmd, directory, flag] if cmd == "scan" && flag == "--json" => scan(Path::new(directory), true)?,
@@ -116,6 +122,18 @@ fn scan(root: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn save_scan(root: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    for save in saves::inventory(root)? {
+        if json {
+            println!("{{\"path\":{},\"size_bytes\":{},\"hint\":{},\"verified\":false}}",
+                json_string(&save.path.to_string_lossy()), save.size, json_string(save.hint));
+        } else {
+            println!("{}\t{}\t{}", save.size, save.hint, save.path.display());
+        }
+    }
+    Ok(())
+}
+
 fn usage() {
     println!("\
 Ninforge {} - Nintendo file inspection (read-only by default)
@@ -127,6 +145,8 @@ Usage:
   ninforge verify <file>                   Validate NSP/NDS structural bounds
   ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
+  ninforge saves scan <dir> [--json]       Discover save candidates by extension
+  ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
   ninforge help                            Show this help
 
 Limitations:

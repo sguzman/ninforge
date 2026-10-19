@@ -30,6 +30,8 @@ ninforge extract ./game.nds arm9.bin ./arm9.bin
 ninforge list ./game.nds --json
 ninforge extract ./game.nds nitrofs/sound/bgm.bin ./bgm.bin
 ninforge scan /drive/games --json
+ninforge saves scan /drive/saves --json
+ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
@@ -37,12 +39,14 @@ ninforge scan /drive/games --json
 - `verify` validates PFS0 entry names, non-overlap and bounds, or DS section bounds. It is **not** a content hash check, signature check, or authenticity guarantee.
 - `extract` writes **one specified** PFS0 entry, DS section or NitroFS file to an **explicit** output path, refuses to overwrite existing output and never builds paths from archive filenames. Extracted outputs stay outside the repository.
 - `scan <directory>` recursively inventories recognized game files, skips symlinks and streams file reports; `scan --json` uses NDJSON (one object per line), reports bad files to stderr and exits nonzero on errors.
+- `saves scan` discovers potential raw saves using extension hints, without claiming game compatibility or inspecting personal saves. `saves backup` copies an explicitly selected regular file to a named output; it never overwrites, publishes via a hard link after syncing a temporary copy, and leaves the source untouched. The destination filesystem must support hard links.
 - `--json` on `info` and `list` yields a stable initial machine-readable shape for integration with tools such as Cheatarium.
 
 ## Architecture
 
 - `src/lib.rs`: format identification, metadata, bounded PFS0 directory parsing, streaming extraction.
 - `src/nds.rs`: header-declared DS regions with checked bounds.
+- `src/saves.rs`: generic save candidate inventory and no-overwrite, file-by-file backup; no save editing or credentials.
 - `src/main.rs`: thin CLI presentation layer; no format-specific data logic.
 - Console modules will be separated as their parsers grow. Share generic IO/bounds utilities but **do not** impose a fake common save format.
 - Preserve a read-only default. Any future save editor requires format-aware validation, an explicit backup, and atomic replace/rollback.

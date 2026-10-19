@@ -15,3 +15,7 @@ Allow a small homebrew/test ROM in the future only if:
 Negative tests cover truncation, offset overflow, string table limits, duplicate names and overlapping regions. Future tests should cover malformed UTF-8, symlink/path edge cases and fuzzing. Long-term additions: fuzzing and corpus minimization, property tests, cross-tool comparison against legitimately obtained local files without uploading them.
 
 The repository CI is authoritative for compilation where a Rust toolchain is available. Do not claim successful local compilation unless tests were actually executed.
+
+## Save safety tests
+
+Synthetic byte strings only: candidate extensions, nested directories, no-overwrite backups, source immutability, and symlink refusal (on Unix). The backup uses same-directory hard links for no-clobber publication; filesystems without hard-link support produce an error rather than unsafe replacement. No user save, emulator configuration, or game data is stored in the repository.

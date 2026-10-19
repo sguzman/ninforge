@@ -60,7 +60,7 @@ pub(crate) fn filesystem<R: Read + Seek>(
     if [fnt_offset, fnt_size, fat_offset, fat_size].iter().all(|n| *n == 0) {
         return Ok(Vec::new());
     }
-    if fnt_offset == 0 || fat_offset == 0 || fnt_size < 8 || fnt_size > 16 * 1024 * 1024
+    if fnt_offset == 0 || fat_offset == 0 || !(8..=16 * 1024 * 1024).contains(&fnt_size)
         || fat_size == 0 || fat_size % 8 != 0 || fat_size > 8 * 1024 * 1024
         || fnt_offset.checked_add(fnt_size).is_none_or(|end| end > length)
         || fat_offset.checked_add(fat_size).is_none_or(|end| end > length)
