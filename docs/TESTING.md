@@ -59,3 +59,7 @@ Synthetic nested XCI/HFS0 root-and-secure partitions are used to verify CNMT ref
 ## Plaintext NCA header cross-check
 
 `package audit --headers` checks only uniquely identified NCA entries using a bounded first-0x400-byte read. Unit tests cover matching type and size, separately reported NCA program IDs, mismatched content type or size, raw encrypted header detection as unavailable, malformed plaintext NCA headers, and missing referenced NCAs. This remains separate from the optional full SHA-256 digest comparison: neither step authenticates the external CNMT or establishes ownership of an attached main NSO.
+
+## Version-aware title inventory
+
+Synthetic sidecar bundles are indexed one directory deep only, ordered by folder name and grouped by claimed application ID. Cases cover base-versus-patch version distinctions, highest supplied patch revision, identical duplicate releases, conflicting same-title/version CNMT digest pairs, missing or malformed plaintext metadata, and symlinked bundle rejection. CLI JSON schema version 1 is kept separate from package audit JSON and explicitly states that attached NACP/NSO evidence is not authenticated.

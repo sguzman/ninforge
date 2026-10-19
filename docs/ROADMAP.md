@@ -40,6 +40,10 @@ Within each phase, deliver: recognition -> trustworthy metadata -> validated dir
 
 Implemented: conservative one-directory sidecar discovery (`package audit-dir`) and explicit plaintext CNMT + NSP/PFS0 or XCI secure-partition name-and-size audit, structured content statuses, machine-readable output, optional streaming SHA-256 comparison and bounded readable NCA header consistency checks against unverified CNMT, and optional read-only user-supplied NACP and user-designated main NSO metadata. External evidence is never implicitly linked to the package. Does not authenticate CNMT provenance, decrypt encrypted meta NCAs, verify SHA-256, derive executable NSO build IDs from encrypted content, or automatically associate multiple installed game versions. These remain future work.
 
+## Version-aware Switch title inventory
+
+Implemented: `ninforge titles inventory <root> --json` for non-recursive, user-provided plaintext CNMT bundle collections, with optional independently available NACP titles/display versions and user-designated NSO build IDs. Groups use explicit CNMT application relationships and preserve title IDs and versions independently. Colliding metadata for the same title/version/type is reported instead of silently selected. The reported highest version is only the highest **within the supplied local dataset**, not a network lookup or trusted publisher release value. Bundle co-location alone does not authenticate executable-to-title association. No game bytes, secrets, or remote title databases are required.
+
 ## Save inventory MVP
 
 Implemented: extension-based, read-only candidate enumeration plus explicit, non-overwriting single-file backup. **Not implemented**: automatic emulator discovery, save-file format validation, game-to-save matching, save editing, or directory-wide transactional backups. Those require separate platform adapters and adversarial tests.

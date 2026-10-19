@@ -4,6 +4,7 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
+use ninforge::title_inventory::{inventory_metadata_root, TitleInventory};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
@@ -60,6 +61,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [cmd, sub, source, destination] if cmd == "saves" && sub == "backup" => {
             let copied = saves::backup(Path::new(source), Path::new(destination))?;
             println!("Backed up {copied} bytes to {destination} (source untouched)");
+        }
+        [cmd, sub, root] if cmd == "titles" && sub == "inventory" => {
+            let catalog = inventory_metadata_root(Path::new(root))?;
+            print_title_inventory(&catalog);
+        }
+        [cmd, sub, root, flag] if cmd == "titles" && sub == "inventory" && flag == "--json" => {
+            let catalog = inventory_metadata_root(Path::new(root))?;
+            println!("{}", title_inventory_json(&catalog));
         }
         [cmd, sub, rest @ ..] if cmd == "package" && sub == "audit" => {
             run_package_audit(rest)?;
@@ -234,6 +243,8 @@ Usage:
   ninforge package audit-dir <nsp-or-xci> <metadata-dir> [--headers] [--hash] [--json]
                                            Discover unique plaintext metadata sidecars
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
+  ninforge titles inventory <root> [--json]
+                                           Index immediate metadata bundle folders
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
   ninforge help                            Show this help
@@ -560,6 +571,100 @@ fn package_audit_json(audit: &PackageAudit) -> String {
             write!(&mut out, "{}:{}", json_string(key), json_string(value)).expect("String write");
         }
         out.push_str("}}");
+    }
+    out.push_str("]}");
+    out
+}
+
+
+fn print_title_inventory(catalog: &TitleInventory) {
+    println!("External metadata bundles: {}", catalog.bundles_scanned);
+    println!("Claimed application groups: {}", catalog.groups.len());
+    println!("Duplicate title/version/type sets: {}", catalog.version_collisions);
+    for group in &catalog.groups {
+        println!("Application group: {}", group.application_id);
+        if let Some(version) = group.latest_application_version {
+            println!("  highest supplied application CNMT version: {version}");
+        }
+        if let Some(version) = group.latest_patch_version {
+            println!("  highest supplied patch CNMT version: {version}");
+        }
+        for record in &group.records {
+            println!(
+                "  {}\t{}\t{}\t{}\t{}",
+                record.bundle, record.meta_type, record.title_id,
+                record.version, record.atmosphere_cheat_build_id.as_deref().unwrap_or("-")
+            );
+        }
+        for collision in &group.version_collisions {
+            println!(
+                "  DUPLICATE\t{}\t{}\t{} files\tconflicting CNMT bytes: {}",
+                collision.title_id, collision.version,
+                collision.bundles.len(), collision.conflicting_content
+            );
+        }
+    }
+    println!("CNMT, NACP and NSO files are user-supplied and unverified.");
+}
+
+fn option_json(value: Option<&str>) -> String {
+    value.map_or_else(|| "null".to_string(), json_string)
+}
+
+/// Versioned schema with explicit evidence and no inferred package association.
+/// This is a local inventory, not a server-backed latest-version feed.
+fn title_inventory_json(catalog: &TitleInventory) -> String {
+    let mut out = format!(
+        r#"{{"schema_version":1,"source":"external_plaintext_metadata_unverified","bundles_scanned":{},"application_groups":{},"version_collisions":{},"groups":["#,
+        catalog.bundles_scanned, catalog.groups.len(), catalog.version_collisions,
+    );
+    for (i, group) in catalog.groups.iter().enumerate() {
+        if i > 0 { out.push(','); }
+        write!(
+            &mut out,
+            r#"{{"application_id":{},"latest_application_version":{},"latest_patch_version":{},"records":["#,
+            json_string(&group.application_id),
+            group.latest_application_version.map_or("null".into(), |v| v.to_string()),
+            group.latest_patch_version.map_or("null".into(), |v| v.to_string()),
+        ).expect("String write");
+        for (j, record) in group.records.iter().enumerate() {
+            if j > 0 { out.push(','); }
+            write!(
+                &mut out,
+                r#"{{"bundle":{},"title_id":{},"version":{},"meta_type":{},"application_group_id":{},"grouping_basis":{},"source_sha256":{},"content_count":{},"linked_application_id":{},"display_title":{},"display_version":{},"module_build_id":{},"atmosphere_cheat_build_id":{},"nacp_nso_link_verified":false}}"#,
+                json_string(&record.bundle),
+                json_string(&record.title_id),
+                record.version,
+                json_string(&record.meta_type),
+                json_string(&record.application_group_id),
+                json_string(record.grouping_basis),
+                json_string(&record.source_sha256),
+                record.content_count,
+                option_json(record.linked_application_id.as_deref()),
+                option_json(record.display_title.as_deref()),
+                option_json(record.display_version.as_deref()),
+                option_json(record.module_build_id.as_deref()),
+                option_json(record.atmosphere_cheat_build_id.as_deref()),
+            ).expect("String write");
+        }
+        out.push_str(r#"],"version_collisions":["#);
+        for (j, collision) in group.version_collisions.iter().enumerate() {
+            if j > 0 { out.push(','); }
+            write!(
+                &mut out,
+                r#"{{"title_id":{},"version":{},"meta_type":{},"conflicting_content":{},"bundles":["#,
+                json_string(&collision.title_id),
+                collision.version,
+                json_string(&collision.meta_type),
+                collision.conflicting_content,
+            ).expect("String write");
+            for (index, name) in collision.bundles.iter().enumerate() {
+                if index > 0 { out.push(','); }
+                out.push_str(&json_string(name));
+            }
+            out.push_str("]}");
+        }
+        out.push_str("]}");
     }
     out.push_str("]}");
     out

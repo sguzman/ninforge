@@ -34,6 +34,7 @@ ninforge package audit ./game.nsp ./metadata.cnmt --json
 ninforge package audit ./game.nsp ./metadata.cnmt --hash --json
 ninforge package audit-dir ./game.nsp ./readable-metadata --hash --json
 ninforge package audit ./game.xci ./metadata.cnmt --hash --json
+ninforge titles inventory ./switch-metadata-bundles --json
 ninforge package audit-dir ./game.nsp ./readable-metadata --headers --json
 ninforge package audit ./game.nsp ./metadata.cnmt --nacp ./control.nacp --main-nso ./main.nso --json
 ninforge verify ./game.nsp
@@ -49,6 +50,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
 - `nca info` accepts an explicitly supplied readable/decrypted NCA2 or NCA3 header (or full archive with plaintext header). Reports content type, program ID, distribution, rights ID when present and bounded filesystem section layout. Raw retail NCA headers remain encrypted; Ninforge does not decrypt them.
+- `titles inventory <root> --json` reads one metadata bundle per immediate child directory. Each bundle must contain exactly one plaintext `*.cnmt`, and can include a `*.nacp` plus a user-designated `main.nso`. It groups base applications, patches and add-on content using **claimed CNMT application references**, retains numeric CNMT versions separately from NACP display versions, and reports the highest supplied base/patch revision (not the latest published version). Identical and conflicting duplicate title/version records are surfaced; no candidate is silently preferred. No recursion, symlink following or decryption. The JSON includes explicitly unverified build IDs for Cheatarium but never claims title-to-executable authentication.
 - `package audit-dir <nsp-or-xci> <metadata-dir>` searches only the selected directory for exactly one plaintext `*.cnmt`, at most one `*.nacp`, and an optional file explicitly named `main.nso`. Multiple CNMT/NACP candidates or symlinks are errors; other NSO modules are never guessed to be the main executable. Its output uses the existing package audit schema, with metadata still marked as unverified external evidence. Add `--hash` to check NSP bytes against CNMT assertions.
 - `package audit <nsp-or-xci> <cnmt> --headers` reads up to 0x400 header bytes from each uniquely present NCA (including XCI secure-partition entries). Already-readable NCA2/NCA3 headers are checked against the CNMT-declared content type and size; inaccessible encrypted headers are explicitly marked unavailable. NCA program IDs are reported but **not equated to CNMT title IDs**. This is a structural consistency check only, not content authentication. Combine with `--hash` for full-file SHA-256 against the independently supplied CNMT digest.
 - `package audit <nsp-or-xci> <cnmt> --hash` streams SHA-256 over size-matched NCA entries inside the NSP and compares each hash with the content digest asserted by the supplied CNMT. Hashes are calculated only on request, in bounded memory, and no output or temporary game file is created. Per-record statuses distinguish `matched`, `mismatched`, `unavailable`, and `not_checked`. A match **does not prove the CNMT is genuine**. `hashes_verified` remains false in the JSON to avoid confusing content correlation with signature/title authentication; `hashes_match_supplied_cnmt` reports the narrower claim.
@@ -71,6 +73,7 @@ ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 - `src/nacp.rs`: standalone NACP metadata inspection; no decryption or game file extraction.
 - `src/nca.rs`: decrypted NCA header reader with checked section bounds.
 - `src/cnmt.rs`: standalone CNMT metadata and typed content references.
+- `src/title_inventory.rs`: bounded, version-aware multi-bundle CNMT inventory with deterministic grouping and duplicate/conflict checks.
 - `src/metadata_dir.rs`: non-recursive, fail-closed discovery of separately accessible metadata sidecars.
 - `src/package.rs`: read-only NSP/XCI secure-partition correlation with plaintext CNMT, optional streaming SHA-256 checks, and explicit external metadata evidence.
 - `src/nds.rs`: header-declared DS regions and bounded FNT/FAT NitroFS traversal.

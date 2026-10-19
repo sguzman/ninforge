@@ -6,6 +6,7 @@
 pub mod cnmt;
 mod hfs0;
 pub mod metadata_dir;
+pub mod title_inventory;
 pub mod nacp;
 pub mod nca;
 mod nds;
