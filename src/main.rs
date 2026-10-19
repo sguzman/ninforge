@@ -2,8 +2,8 @@
 
 use ninforge::cnmt::inspect_cnmt;
 use ninforge::nacp::inspect_nacp;
-use ninforge::package::{audit_nsp, MatchStatus, PackageAudit};
 use ninforge::nca::inspect_decrypted_nca;
+use ninforge::package::{audit_nsp, MatchStatus, PackageAudit};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -61,9 +61,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let result = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
             print_package_audit(&result);
         }
-        [cmd, sub, nsp, cnmt, flag]
-            if cmd == "package" && sub == "audit" && flag == "--json" =>
-        {
+        [cmd, sub, nsp, cnmt, flag] if cmd == "package" && sub == "audit" && flag == "--json" => {
             let result = audit_nsp(&mut File::open(nsp)?, &mut File::open(cnmt)?)?;
             println!("{}", package_audit_json(&result));
         }
@@ -294,7 +292,6 @@ fn report_json(report: &Report, include_entries: bool) -> String {
     text
 }
 
-
 fn print_package_audit(audit: &PackageAudit) {
     println!("CNMT claimed title ID: {}", audit.title_id);
     println!("CNMT claimed version: {}", audit.version);
@@ -336,7 +333,9 @@ fn package_audit_json(audit: &PackageAudit) -> String {
         audit.count(MatchStatus::Ambiguous),
     );
     for (index, content) in audit.referenced.iter().enumerate() {
-        if index != 0 { out.push(','); }
+        if index != 0 {
+            out.push(',');
+        }
         write!(
             &mut out,
             r#"{{"id":{},"type":{},"expected_size":{},"expected_filename":{},"package_filename":{},"package_size":{},"status":{}}}"#,
@@ -351,7 +350,9 @@ fn package_audit_json(audit: &PackageAudit) -> String {
     }
     out.push_str(r#"],"unreferenced_nca":["#);
     for (index, file) in audit.unreferenced_nca.iter().enumerate() {
-        if index != 0 { out.push(','); }
+        if index != 0 {
+            out.push(',');
+        }
         out.push_str(&json_string(file));
     }
     out.push_str("]}");
@@ -384,12 +385,17 @@ mod tests {
     #[test]
     fn package_json_distinguishes_missing_unverified_metadata() {
         let report = PackageAudit {
-            title_id: "0123".into(), version: "65536".into(), meta_type: "patch".into(),
+            title_id: "0123".into(),
+            version: "65536".into(),
+            meta_type: "patch".into(),
             package_entries: 1,
             referenced: vec![ninforge::package::ContentMatch {
-                id: "0011".into(), content_type: "program",
-                expected_size: 7, expected_filename: "0011.nca".into(),
-                package_filename: None, package_size: None,
+                id: "0011".into(),
+                content_type: "program",
+                expected_size: 7,
+                expected_filename: "0011.nca".into(),
+                package_filename: None,
+                package_size: None,
                 status: MatchStatus::Missing,
             }],
             unreferenced_nca: vec!["other.nca".into()],

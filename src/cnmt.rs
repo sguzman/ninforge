@@ -153,8 +153,11 @@ pub fn inspect_cnmt_with_content<R: Read + Seek>(
             return Err(bad("CNMT content reference has zero content ID"));
         }
         references.push(ContentRecord {
-            id: id.clone(), size, content_type: content_name(row[0x36]),
-            attributes: row[0x35], id_offset: row[0x37],
+            id: id.clone(),
+            size,
+            content_type: content_name(row[0x36]),
+            attributes: row[0x35],
+            id_offset: row[0x37],
         });
         let name = format!("content_{i}");
         add(&mut report, format!("{name}_id"), id);
@@ -236,7 +239,9 @@ mod tests {
         assert_eq!(content[0].attributes, 0xa4);
         assert_eq!(content[0].content_type, "program");
         assert_eq!(content[0].id, "000102030405060708090A0B0C0D0E0F");
-        assert!(report.metadata.contains(&("content_0_attributes".into(), "164".into())));
+        assert!(report
+            .metadata
+            .contains(&("content_0_attributes".into(), "164".into())));
     }
 
     #[test]

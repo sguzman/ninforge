@@ -58,7 +58,10 @@ pub struct PackageAudit {
 }
 impl PackageAudit {
     pub fn count(&self, status: MatchStatus) -> usize {
-        self.referenced.iter().filter(|record| record.status == status).count()
+        self.referenced
+            .iter()
+            .filter(|record| record.status == status)
+            .count()
     }
     pub fn complete_by_size(&self) -> bool {
         !self.referenced.is_empty() && self.count(MatchStatus::Present) == self.referenced.len()
@@ -74,12 +77,15 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
     let package = inspect(nsp)?;
     if package.format != Format::SwitchNsp {
         return Err(io::Error::new(
-            ErrorKind::InvalidInput, "package audit currently requires NSP/PFS0",
+            ErrorKind::InvalidInput,
+            "package audit currently requires NSP/PFS0",
         ));
     }
     let (metadata, references) = inspect_cnmt_with_content(cnmt)?;
     let get = |field: &str| -> io::Result<String> {
-        metadata.metadata.iter()
+        metadata
+            .metadata
+            .iter()
             .find(|(key, _)| key == field)
             .map(|(_, value)| value.clone())
             .ok_or_else(|| invalid("CNMT required metadata field missing"))
@@ -96,12 +102,12 @@ pub fn audit_nsp<R: Read + Seek, C: Read + Seek>(
     }
     // Meta NCAs need not be referenced as regular content in the CNMT and are
     // intentionally omitted from the supplementary unreferenced list.
-    let mut unreferenced_nca: Vec<String> = package.entries.iter()
+    let mut unreferenced_nca: Vec<String> = package
+        .entries
+        .iter()
         .filter(|entry| {
             let name = entry.name.to_ascii_lowercase();
-            name.ends_with(".nca")
-                && !name.ends_with(".cnmt.nca")
-                && !matched_names.contains(&name)
+            name.ends_with(".nca") && !name.ends_with(".cnmt.nca") && !matched_names.contains(&name)
         })
         .map(|entry| entry.name.clone())
         .collect();
@@ -125,7 +131,8 @@ fn match_record(entries: &[Entry], record: &ContentRecord) -> ContentMatch {
     } else {
         filename
     };
-    let direct: Vec<&Entry> = entries.iter()
+    let direct: Vec<&Entry> = entries
+        .iter()
         .filter(|entry| entry.name.eq_ignore_ascii_case(&expected))
         .collect();
 
@@ -139,8 +146,13 @@ fn match_record(entries: &[Entry], record: &ContentRecord) -> ContentMatch {
         };
         (status, Some(*entry))
     } else {
-        let compressed_name = expected.strip_suffix(".nca").unwrap_or(&expected).to_string() + ".ncz";
-        let compressed: Vec<&Entry> = entries.iter()
+        let compressed_name = expected
+            .strip_suffix(".nca")
+            .unwrap_or(&expected)
+            .to_string()
+            + ".ncz";
+        let compressed: Vec<&Entry> = entries
+            .iter()
             .filter(|entry| entry.name.eq_ignore_ascii_case(&compressed_name))
             .collect();
         match compressed.as_slice() {
@@ -228,7 +240,10 @@ mod tests {
         assert_eq!(result.count(MatchStatus::Present), 1);
         assert_eq!(result.count(MatchStatus::Missing), 1);
         assert!(!result.complete_by_size());
-        assert_eq!(result.referenced[0].package_filename.as_deref(), Some("11111111111111111111111111111111.nca"));
+        assert_eq!(
+            result.referenced[0].package_filename.as_deref(),
+            Some("11111111111111111111111111111111.nca")
+        );
         assert_eq!(result.unreferenced_nca, vec!["unrelated.nca"]);
     }
 
@@ -261,8 +276,12 @@ mod tests {
     #[test]
     fn refuses_non_nsp_and_malformed_cnmt() {
         assert_eq!(
-            audit_nsp(&mut Cursor::new(b"not an nsp".to_vec()), &mut Cursor::new(cnmt(&[])))
-                .unwrap_err().kind(),
+            audit_nsp(
+                &mut Cursor::new(b"not an nsp".to_vec()),
+                &mut Cursor::new(cnmt(&[]))
+            )
+            .unwrap_err()
+            .kind(),
             ErrorKind::InvalidInput
         );
         let archive = nsp(&[]);
@@ -275,6 +294,9 @@ mod tests {
         let refs = cnmt(&[(CONTENT_A, 5, 0)]);
         let result = audit_nsp(&mut Cursor::new(archive), &mut Cursor::new(refs)).unwrap();
         assert_eq!(result.count(MatchStatus::Present), 1);
-        assert_eq!(result.referenced[0].expected_filename, "11111111111111111111111111111111.cnmt.nca");
+        assert_eq!(
+            result.referenced[0].expected_filename,
+            "11111111111111111111111111111111.cnmt.nca"
+        );
     }
 }
