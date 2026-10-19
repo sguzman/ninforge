@@ -76,7 +76,10 @@ pub struct TitleInventory {
 }
 
 fn field<'a>(metadata: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    metadata.iter().find(|(name, _)| name == key).map(|(_, value)| value.as_str())
+    metadata
+        .iter()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value.as_str())
 }
 
 fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
@@ -84,37 +87,47 @@ fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
     let mut file = File::open(&metadata.cnmt)?;
     // An explicit upper bound even if the file grows between discovery and read.
     let mut bytes = Vec::new();
-    (&mut file).take(MAX_CNMT_BYTES + 1).read_to_end(&mut bytes)?;
+    (&mut file)
+        .take(MAX_CNMT_BYTES + 1)
+        .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_CNMT_BYTES {
         return Err(invalid("CNMT exceeds 16 MiB inventory limit"));
     }
-    let source_sha256 = Sha256::digest(&bytes).iter()
-        .map(|byte| format!("{byte:02X}")).collect::<String>();
+    let source_sha256 = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<String>();
     let (report, contents) = inspect_cnmt_with_content(&mut Cursor::new(bytes))?;
     let title_id = field(&report.metadata, "title_id")
-        .ok_or_else(|| invalid("CNMT title ID absent"))?.to_string();
+        .ok_or_else(|| invalid("CNMT title ID absent"))?
+        .to_string();
     let version = field(&report.metadata, "version")
         .ok_or_else(|| invalid("CNMT version absent"))?
-        .parse::<u32>().map_err(|_| invalid("CNMT version invalid"))?;
+        .parse::<u32>()
+        .map_err(|_| invalid("CNMT version invalid"))?;
     let meta_type = field(&report.metadata, "meta_type")
-        .ok_or_else(|| invalid("CNMT type absent"))?.to_string();
+        .ok_or_else(|| invalid("CNMT type absent"))?
+        .to_string();
     let linked_application_id = field(&report.metadata, "application_id").map(str::to_owned);
     // A base Application CNMT has patch_id, not application_id; it should
     // remain grouped by its own title ID rather than by its patch counterpart.
-    let (application_group_id, grouping_basis) =
-        if let Some(ref linked) = linked_application_id {
-            (linked.clone(), "cnmt_application_reference_unverified")
-        } else {
-            (title_id.clone(), "cnmt_title_id_unverified")
-        };
+    let (application_group_id, grouping_basis) = if let Some(ref linked) = linked_application_id {
+        (linked.clone(), "cnmt_application_reference_unverified")
+    } else {
+        (title_id.clone(), "cnmt_title_id_unverified")
+    };
 
     let mut display_title = None;
     let mut display_version = None;
     if let Some(path) = metadata.nacp {
         let nacp = inspect_nacp(&mut File::open(path)?)?;
         display_title = field(&nacp.metadata, "title_american_english")
-            .or_else(|| nacp.metadata.iter().find(|(name, _)| name.starts_with("title_"))
-                .map(|(_, value)| value.as_str()))
+            .or_else(|| {
+                nacp.metadata
+                    .iter()
+                    .find(|(name, _)| name.starts_with("title_"))
+                    .map(|(_, value)| value.as_str())
+            })
             .map(str::to_owned);
         display_version = field(&nacp.metadata, "display_version").map(str::to_owned);
     }
@@ -130,10 +143,19 @@ fn read_record(directory: &Path, bundle: String) -> io::Result<TitleRecord> {
             field(&report.metadata, "atmosphere_cheat_build_id").map(str::to_owned);
     }
     Ok(TitleRecord {
-        bundle, title_id, version, meta_type, application_group_id,
-        grouping_basis, source_sha256, content_count: contents.len(),
-        linked_application_id, display_title, display_version,
-        module_build_id, atmosphere_cheat_build_id,
+        bundle,
+        title_id,
+        version,
+        meta_type,
+        application_group_id,
+        grouping_basis,
+        source_sha256,
+        content_count: contents.len(),
+        linked_application_id,
+        display_title,
+        display_version,
+        module_build_id,
+        atmosphere_cheat_build_id,
     })
 }
 
@@ -156,36 +178,57 @@ pub fn inventory_metadata_root(root: &Path) -> io::Result<TitleInventory> {
         if dirs.len() == MAX_BUNDLES {
             return Err(invalid("inventory exceeds 2048 immediate subdirectories"));
         }
-        let name = item.file_name().into_string()
+        let name = item
+            .file_name()
+            .into_string()
             .map_err(|_| invalid("inventory directory name is not UTF-8"))?;
         dirs.push((name, item.path()));
     }
     if dirs.is_empty() {
-        return Err(invalid("inventory requires at least one bundle subdirectory"));
+        return Err(invalid(
+            "inventory requires at least one bundle subdirectory",
+        ));
     }
     dirs.sort_by(|left, right| left.0.cmp(&right.0));
     let mut groups: BTreeMap<String, Vec<TitleRecord>> = BTreeMap::new();
     for (name, path) in &dirs {
         let record = read_record(path, name.clone())?;
-        groups.entry(record.application_group_id.clone()).or_default().push(record);
+        groups
+            .entry(record.application_group_id.clone())
+            .or_default()
+            .push(record);
     }
     let mut versions = 0;
     let mut result = Vec::with_capacity(groups.len());
     for (application_id, mut records) in groups {
         records.sort_by(|a, b| {
-            (&a.title_id, &a.meta_type, a.version, &a.bundle)
-                .cmp(&(&b.title_id, &b.meta_type, b.version, &b.bundle))
+            (&a.title_id, &a.meta_type, a.version, &a.bundle).cmp(&(
+                &b.title_id,
+                &b.meta_type,
+                b.version,
+                &b.bundle,
+            ))
         });
-        let latest_application_version = records.iter()
+        let latest_application_version = records
+            .iter()
             .filter(|record| record.meta_type == "application" && record.title_id == application_id)
-            .map(|record| record.version).max();
-        let latest_patch_version = records.iter()
+            .map(|record| record.version)
+            .max();
+        let latest_patch_version = records
+            .iter()
             .filter(|record| record.meta_type == "patch")
-            .map(|record| record.version).max();
+            .map(|record| record.version)
+            .max();
         let mut by_release: BTreeMap<(String, String, u32), Vec<&TitleRecord>> = BTreeMap::new();
         for record in &records {
-            by_release.entry((record.title_id.clone(), record.meta_type.clone(), record.version))
-                .or_default().push(record);
+            by_release
+                .entry((
+                    record.title_id.clone(),
+                    record.meta_type.clone(),
+                    record.version,
+                ))
+                .or_default()
+                .push(record);
         }
         let mut version_collisions = Vec::new();
         for ((title_id, meta_type, version), duplicates) in by_release {
@@ -195,14 +238,19 @@ pub fn inventory_metadata_root(root: &Path) -> io::Result<TitleInventory> {
             versions += 1;
             let original = &duplicates[0].source_sha256;
             version_collisions.push(VersionCollision {
-                title_id, version, meta_type,
+                title_id,
+                version,
+                meta_type,
                 bundles: duplicates.iter().map(|r| r.bundle.clone()).collect(),
                 conflicting_content: duplicates.iter().any(|r| &r.source_sha256 != original),
             });
         }
         result.push(TitleGroup {
-            application_id, records, latest_application_version,
-            latest_patch_version, version_collisions,
+            application_id,
+            records,
+            latest_application_version,
+            latest_patch_version,
+            version_collisions,
         });
     }
     Ok(TitleInventory {
@@ -221,19 +269,34 @@ mod tests {
     struct Temp(PathBuf);
     impl Temp {
         fn new() -> Self {
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             let dir = std::env::temp_dir().join(format!(
-                "ninforge-title-inventory-{}-{now}-{}", std::process::id(),
+                "ninforge-title-inventory-{}-{now}-{}",
+                std::process::id(),
                 SERIAL.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir(&dir).unwrap();
             Self(dir)
         }
-        fn bundle(&self, name: &str, title: u64, version: u32, kind: u8,
-            linked: Option<u64>, marker: u8) {
+        fn bundle(
+            &self,
+            name: &str,
+            title: u64,
+            version: u32,
+            kind: u8,
+            linked: Option<u64>,
+            marker: u8,
+        ) {
             let dir = self.0.join(name);
             fs::create_dir(&dir).unwrap();
-            let ext_len = if matches!(kind, 0x80..=0x83) {0x10usize} else {0};
+            let ext_len = if matches!(kind, 0x80..=0x83) {
+                0x10usize
+            } else {
+                0
+            };
             let mut cnmt = vec![0u8; 0x20 + ext_len + 0x20];
             cnmt[..8].copy_from_slice(&title.to_le_bytes());
             cnmt[8..12].copy_from_slice(&version.to_le_bytes());
@@ -248,7 +311,9 @@ mod tests {
         }
     }
     impl Drop for Temp {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
     const APP: u64 = 0x0100_1234_5678_8000;
     const PATCH: u64 = 0x0100_1234_5678_8800;

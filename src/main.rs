@@ -4,11 +4,11 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::title_inventory::{inventory_metadata_root, TitleInventory};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
+use ninforge::title_inventory::{inventory_metadata_root, TitleInventory};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -576,11 +576,13 @@ fn package_audit_json(audit: &PackageAudit) -> String {
     out
 }
 
-
 fn print_title_inventory(catalog: &TitleInventory) {
     println!("External metadata bundles: {}", catalog.bundles_scanned);
     println!("Claimed application groups: {}", catalog.groups.len());
-    println!("Duplicate title/version/type sets: {}", catalog.version_collisions);
+    println!(
+        "Duplicate title/version/type sets: {}",
+        catalog.version_collisions
+    );
     for group in &catalog.groups {
         println!("Application group: {}", group.application_id);
         if let Some(version) = group.latest_application_version {
@@ -592,15 +594,20 @@ fn print_title_inventory(catalog: &TitleInventory) {
         for record in &group.records {
             println!(
                 "  {}\t{}\t{}\t{}\t{}",
-                record.bundle, record.meta_type, record.title_id,
-                record.version, record.atmosphere_cheat_build_id.as_deref().unwrap_or("-")
+                record.bundle,
+                record.meta_type,
+                record.title_id,
+                record.version,
+                record.atmosphere_cheat_build_id.as_deref().unwrap_or("-")
             );
         }
         for collision in &group.version_collisions {
             println!(
                 "  DUPLICATE\t{}\t{}\t{} files\tconflicting CNMT bytes: {}",
-                collision.title_id, collision.version,
-                collision.bundles.len(), collision.conflicting_content
+                collision.title_id,
+                collision.version,
+                collision.bundles.len(),
+                collision.conflicting_content
             );
         }
     }
@@ -616,10 +623,14 @@ fn option_json(value: Option<&str>) -> String {
 fn title_inventory_json(catalog: &TitleInventory) -> String {
     let mut out = format!(
         r#"{{"schema_version":1,"source":"external_plaintext_metadata_unverified","bundles_scanned":{},"application_groups":{},"version_collisions":{},"groups":["#,
-        catalog.bundles_scanned, catalog.groups.len(), catalog.version_collisions,
+        catalog.bundles_scanned,
+        catalog.groups.len(),
+        catalog.version_collisions,
     );
     for (i, group) in catalog.groups.iter().enumerate() {
-        if i > 0 { out.push(','); }
+        if i > 0 {
+            out.push(',');
+        }
         write!(
             &mut out,
             r#"{{"application_id":{},"latest_application_version":{},"latest_patch_version":{},"records":["#,
@@ -628,7 +639,9 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
             group.latest_patch_version.map_or("null".into(), |v| v.to_string()),
         ).expect("String write");
         for (j, record) in group.records.iter().enumerate() {
-            if j > 0 { out.push(','); }
+            if j > 0 {
+                out.push(',');
+            }
             write!(
                 &mut out,
                 r#"{{"bundle":{},"title_id":{},"version":{},"meta_type":{},"application_group_id":{},"grouping_basis":{},"source_sha256":{},"content_count":{},"linked_application_id":{},"display_title":{},"display_version":{},"module_build_id":{},"atmosphere_cheat_build_id":{},"nacp_nso_link_verified":false}}"#,
@@ -649,7 +662,9 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
         }
         out.push_str(r#"],"version_collisions":["#);
         for (j, collision) in group.version_collisions.iter().enumerate() {
-            if j > 0 { out.push(','); }
+            if j > 0 {
+                out.push(',');
+            }
             write!(
                 &mut out,
                 r#"{{"title_id":{},"version":{},"meta_type":{},"conflicting_content":{},"bundles":["#,
@@ -659,7 +674,9 @@ fn title_inventory_json(catalog: &TitleInventory) -> String {
                 collision.conflicting_content,
             ).expect("String write");
             for (index, name) in collision.bundles.iter().enumerate() {
-                if index > 0 { out.push(','); }
+                if index > 0 {
+                    out.push(',');
+                }
                 out.push_str(&json_string(name));
             }
             out.push_str("]}");

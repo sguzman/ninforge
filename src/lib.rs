@@ -6,12 +6,12 @@
 pub mod cnmt;
 mod hfs0;
 pub mod metadata_dir;
-pub mod title_inventory;
 pub mod nacp;
 pub mod nca;
 mod nds;
 pub mod package;
 pub mod saves;
+pub mod title_inventory;
 
 use std::collections::HashSet;
 use std::fmt;
