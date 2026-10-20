@@ -16,11 +16,11 @@ pub mod nca;
 pub mod ncch;
 pub mod ncsd;
 pub mod ncsd_ncch;
-pub mod nes;
 mod nds;
 mod nds_banner;
 mod nds_crc;
 pub mod nds_save;
+pub mod nes;
 pub mod package;
 pub mod saves;
 pub mod title_inventory;
@@ -174,7 +174,9 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("header", if nes.nes2 { "NES 2.0" } else { "iNES" });
         report.add("mapper", nes.mapper);
         report.add("mapper_high_bits_ambiguous", nes.mapper_high_bits_ambiguous);
-        if let Some(value) = nes.submapper { report.add("submapper", value); }
+        if let Some(value) = nes.submapper {
+            report.add("submapper", value);
+        }
         report.add("prg_rom_bytes", nes.prg_rom_bytes);
         report.add("chr_rom_bytes", nes.chr_rom_bytes);
         // Retain the original KiB fields for existing metadata consumers.
@@ -191,12 +193,24 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("console_type", nes.console_type);
         report.add("declared_regions_fit_file", nes.declared_regions_fit_file);
         report.add("minimum_file_bytes", nes.minimum_file_bytes);
-        if let Some(value) = nes.prg_ram_bytes { report.add("prg_ram_bytes", value); }
-        if let Some(value) = nes.prg_nvram_bytes { report.add("prg_nvram_bytes", value); }
-        if let Some(value) = nes.chr_ram_bytes { report.add("chr_ram_bytes", value); }
-        if let Some(value) = nes.chr_nvram_bytes { report.add("chr_nvram_bytes", value); }
-        if let Some(value) = nes.timing_mode { report.add("timing_mode", value); }
-        if let Some(value) = nes.misc_rom_count { report.add("misc_rom_count", value); }
+        if let Some(value) = nes.prg_ram_bytes {
+            report.add("prg_ram_bytes", value);
+        }
+        if let Some(value) = nes.prg_nvram_bytes {
+            report.add("prg_nvram_bytes", value);
+        }
+        if let Some(value) = nes.chr_ram_bytes {
+            report.add("chr_ram_bytes", value);
+        }
+        if let Some(value) = nes.chr_nvram_bytes {
+            report.add("chr_nvram_bytes", value);
+        }
+        if let Some(value) = nes.timing_mode {
+            report.add("timing_mode", value);
+        }
+        if let Some(value) = nes.misc_rom_count {
+            report.add("misc_rom_count", value);
+        }
         report.add("content_checksum_available", false);
     } else if head.starts_with(b"NSO0") && head.len() >= 0x100 {
         report.format = Format::SwitchNso;

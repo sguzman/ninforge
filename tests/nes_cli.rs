@@ -18,28 +18,39 @@ fn nes2() -> Vec<u8> {
     file[11] = 0x07;
     file
 }
-struct Fixture { dir: PathBuf, file: PathBuf }
+struct Fixture {
+    dir: PathBuf,
+    file: PathBuf,
+}
 impl Fixture {
     fn new(data: &[u8]) -> Self {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!(
             "ninforge-nes-cli-{}-{now}-{}",
-            std::process::id(), SERIAL.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&dir).unwrap();
         let file = dir.join("fictional.bin");
         fs::write(&file, data).unwrap();
-        Self {dir,file}
+        Self { dir, file }
     }
     fn exec(&self, command: &str, json: bool) -> Output {
         let mut cli = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cli.arg(command).arg(&self.file);
-        if json {cli.arg("--json");}
+        if json {
+            cli.arg("--json");
+        }
         cli.output().unwrap()
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) {let _=fs::remove_dir_all(&self.dir);}
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 
 #[test]
@@ -47,7 +58,11 @@ fn nes2_mapper_trainer_and_ram_metadata_are_json() {
     let original = nes2();
     let f = Fixture::new(&original);
     let info = f.exec("info", true);
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let json = String::from_utf8(info.stdout).unwrap();
     assert!(json.contains(r#""format":"NES iNES""#));
     assert!(json.contains(r#""header":"NES 2.0""#));
@@ -59,25 +74,32 @@ fn nes2_mapper_trainer_and_ram_metadata_are_json() {
     assert!(json.contains(r#""trainer_present":"true""#));
     assert!(json.contains(r#""declared_regions_fit_file":"true""#));
     let check = f.exec("verify", false);
-    assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
-    assert!(String::from_utf8(check.stdout).unwrap().contains("no ROM data checksum"));
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert!(String::from_utf8(check.stdout)
+        .unwrap()
+        .contains("no ROM data checksum"));
     assert_eq!(fs::read(&f.file).unwrap(), original);
 }
 
 #[test]
 fn nes2_truncation_is_reported_and_verify_fails() {
     let raw = nes2();
-    let f = Fixture::new(&raw[..raw.len()-1]);
+    let f = Fixture::new(&raw[..raw.len() - 1]);
     let info = f.exec("info", true);
     assert!(info.status.success());
-    assert!(String::from_utf8(info.stdout).unwrap()
+    assert!(String::from_utf8(info.stdout)
+        .unwrap()
         .contains(r#""declared_regions_fit_file":"false""#));
     assert!(!f.exec("verify", false).status.success());
 }
 
 #[test]
 fn ines_with_polluted_padding_does_not_invent_high_mapper_bits() {
-    let mut raw = vec![0u8; 16 + 16*1024];
+    let mut raw = vec![0u8; 16 + 16 * 1024];
     raw[..4].copy_from_slice(b"NES\x1a");
     raw[4] = 1;
     raw[6] = 0x30;
@@ -94,7 +116,7 @@ fn ines_with_polluted_padding_does_not_invent_high_mapper_bits() {
 #[test]
 fn nes2_trailing_bytes_without_misc_flag_fail_verify() {
     let mut raw = nes2();
-    raw.extend([0u8;64]);
+    raw.extend([0u8; 64]);
     let f = Fixture::new(&raw);
     assert!(f.exec("info", true).status.success());
     let result = f.exec("verify", false);

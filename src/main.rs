@@ -86,7 +86,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Format::Nes => {
                     use std::io::Read as _;
                     let mut file = File::open(file)?;
-                    let mut header = [0u8;16];
+                    let mut header = [0u8; 16];
                     file.read_exact(&mut header)?;
                     let checked = ninforge::nes::verify_nes(&header, report.bytes)?;
                     println!(
