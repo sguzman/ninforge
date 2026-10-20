@@ -72,7 +72,11 @@ fn main_dol_structural_check_reports_sections_without_changing_image() {
     let image = disc();
     let fixture = Fixture::new(&image);
     let output = fixture.run(&["gamecube", "dol-check"], true);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""format":"gamecube_main_dol""#));
     assert!(json.contains(r#""section_count":2"#));
@@ -88,13 +92,22 @@ fn main_dol_structural_check_reports_sections_without_changing_image() {
 fn main_dol_rejects_sections_beyond_image_and_overlapping_ranges() {
     let mut image = disc();
     put(&mut image, 0x480, 0xfffffff0);
-    assert!(!Fixture::new(&image).run(&["gamecube", "dol-check"], false).status.success());
+    assert!(!Fixture::new(&image)
+        .run(&["gamecube", "dol-check"], false)
+        .status
+        .success());
     let mut image = disc();
     put(&mut image, 0x480 + 0x1c, 0x100);
-    assert!(!Fixture::new(&image).run(&["gamecube", "dol-check"], false).status.success());
+    assert!(!Fixture::new(&image)
+        .run(&["gamecube", "dol-check"], false)
+        .status
+        .success());
     let mut image = disc();
     put(&mut image, 0x480 + 0x1c, 0x380);
-    assert!(!Fixture::new(&image).run(&["gamecube", "dol-check"], false).status.success());
+    assert!(!Fixture::new(&image)
+        .run(&["gamecube", "dol-check"], false)
+        .status
+        .success());
 }
 
 #[test]
@@ -102,5 +115,8 @@ fn no_main_dol_record_is_not_claimed_as_verified() {
     let mut image = disc();
     put(&mut image, 0x420, 0);
     assert!(Fixture::new(&image).run(&["info"], false).status.success());
-    assert!(!Fixture::new(&image).run(&["gamecube", "dol-check"], false).status.success());
+    assert!(!Fixture::new(&image)
+        .run(&["gamecube", "dol-check"], false)
+        .status
+        .success());
 }

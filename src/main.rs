@@ -1,10 +1,10 @@
 //! Standalone Ninforge binary. No external runtime service dependencies.
 
 use ninforge::cia::{inspect_cia, CiaReport};
-use ninforge::gamecube::{inspect_gamecube, inspect_main_dol};
 use ninforge::cia_ticket::{inspect_cia_ticket, CiaTicketReport};
 use ninforge::cia_tmd::{inspect_cia_tmd, CiaTmdReport};
 use ninforge::cnmt::inspect_cnmt;
+use ninforge::gamecube::{inspect_gamecube, inspect_main_dol};
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
@@ -580,7 +580,9 @@ fn run_gamecube_dol_check(path: &str, json: bool) -> Result<(), Box<dyn std::err
                 section.load_address
             );
         }
-        println!("DOL byte spans verified structurally; executable contents and signatures NOT verified");
+        println!(
+            "DOL byte spans verified structurally; executable contents and signatures NOT verified"
+        );
     }
     Ok(())
 }
