@@ -10,7 +10,7 @@ use ninforge::package::{
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
 use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
-use ninforge::wii::{inspect_wii_disc, WiiDiscReport};
+use ninforge::wii::{inspect_wii_disc, validate_wbfs_maps, WbfsMapReport, WiiDiscReport};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -83,6 +83,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "wii" && action == "wbfs-check" => {
+            run_wbfs_check(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "wii" && action == "wbfs-check" && flag == "--json" => {
+            run_wbfs_check(file, true)?;
         }
         [platform, action, file] if platform == "wii" && action == "partitions" => {
             run_wii_partitions(file, false)?;
@@ -306,6 +313,7 @@ Usage:
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge wii partitions <iso> [--json]  Index Wii ISO partition table (not decrypt)
+  ninforge wii wbfs-check <file> [--json]  Validate WBFS disc records and block maps
   ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
@@ -383,6 +391,60 @@ fn run_wii_partitions(path: &str, json: bool) -> Result<(), Box<dyn std::error::
     let disc = inspect_wii_disc(&mut file, report.bytes)?;
     print_wii_partitions(&disc, json);
     Ok(())
+}
+
+/// Explicit, bounded WBFS metadata read: ordinary "info" remains superblock
+/// only. This refuses invalid/truncated wlba indices without touching game data.
+fn run_wbfs_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = inspect(&mut file)?;
+    if report.format != Format::WiiWbfs {
+        return Err("wii wbfs-check requires a WBFS container".into());
+    }
+    let checked = validate_wbfs_maps(&mut file, report.bytes)?;
+    print_wbfs_check(&checked, json);
+    Ok(())
+}
+
+fn print_wbfs_check(report: &WbfsMapReport, json: bool) {
+    if !json {
+        println!(
+            "WBFS: {} occupied records, {} mapped blocks (record {} bytes)",
+            report.checked_slots, report.mapped_blocks_total,
+            report.disc_record_size_bytes,
+        );
+        for disc in &report.discs {
+            println!(
+                "slot={} id={} mapped_blocks={} logical_blocks={} info_offset={}",
+                disc.slot, disc.disc_id, disc.mapped_blocks,
+                disc.logical_blocks, disc.info_offset_bytes
+            );
+        }
+        println!("Block references are within file bounds; game data and cryptographic hashes are NOT verified.");
+        return;
+    }
+    let mut output = format!(
+        r#"{{"format":"wbfs_map_check","occupied_slots":{},"mapped_blocks":{},"host_sector_bytes":{},"wbfs_sector_bytes":{},"declared_capacity_bytes":{},"disc_record_size_bytes":{},"physical_block_count":{},"logical_blocks_per_disc":{},"block_references_within_file":{},"encrypted_content_verified":false,"discs":["#,
+        report.checked_slots, report.mapped_blocks_total,
+        report.host_sector_bytes, report.wbfs_sector_bytes,
+        report.declared_capacity_bytes, report.disc_record_size_bytes,
+        report.physical_block_count, report.logical_blocks_per_disc,
+        report.block_references_within_file,
+    );
+    for (index, disc) in report.discs.iter().enumerate() {
+        if index != 0 { output.push(','); }
+        let last = disc.last_physical_block.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        write!(
+            &mut output,
+            r#"{{"slot":{},"disc_id":{},"info_offset_bytes":{},"mapped_blocks":{},"logical_blocks":{},"last_physical_block":{}}}"#,
+            disc.slot, json_string(&disc.disc_id), disc.info_offset_bytes,
+            disc.mapped_blocks, disc.logical_blocks, last
+        ).expect("JSON formatting");
+    }
+    output.push_str("]}");
+    println!("{output}");
 }
 
 fn print_wii_partitions(disc: &WiiDiscReport, json: bool) {
