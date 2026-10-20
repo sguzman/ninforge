@@ -7,6 +7,7 @@ use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
 use ninforge::ncch::{inspect_ncch, NcchReport};
 use ninforge::ncsd::{inspect_ncsd, NcsdReport};
+use ninforge::ncsd_ncch::{crosscheck, NcsdNcchReport};
 use ninforge::nds_save::{inspect_ds_save, DsSaveReport};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
@@ -102,6 +103,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "3ds" && action == "crosscheck" => {
+            run_ncsd_crosscheck(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "3ds" && action == "crosscheck" && flag == "--json" => {
+            run_ncsd_crosscheck(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "cia-sections" => {
             run_cia_sections(file, false)?;
@@ -364,6 +372,7 @@ Usage:
   ninforge inspect <file> [--json]         Alias for info
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
+  ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
   ninforge 3ds cia-sections <file> [--json]  Index CIA aligned sections, no decryption
   ninforge 3ds partitions <ncsd> [--json]  Inspect NCSD media-unit partition table
   ninforge 3ds ncch-regions <ncch> [--json]  Inspect NCCH content spans (not decrypt)
@@ -507,6 +516,54 @@ fn print_wii_partition_checks(partitions: &[WiiPartitionHeader], json: bool) {
 /// data is readable, decrypted, or valid.
 /// CIA section-index reads only structural length declarations. TMD/ticket
 /// claims and encrypted content bytes remain unverified.
+/// This command reads no encrypted data. Matching identifiers are merely
+/// internal header consistency, not a verified signature or title ownership.
+fn run_ncsd_crosscheck(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = crosscheck(&mut file)?;
+    print_ncsd_crosscheck(&report, json);
+    Ok(())
+}
+
+fn print_ncsd_crosscheck(report: &NcsdNcchReport, json: bool) {
+    if !json {
+        println!(
+            "NCSD/NCCH checked={} compared_ids={} matching_ids={}",
+            report.checked_entries.len(), report.compared_partition_ids,
+            report.matching_partition_ids
+        );
+        for part in &report.checked_entries {
+            println!(
+                "partition={} offset={} size={} ncch_claimed={} product={} id_match={:?}",
+                part.index, part.ncsd_offset_bytes, part.ncsd_partition_bytes,
+                part.ncch_claimed_bytes, part.ncch_product_code,
+                part.partition_id_matches
+            );
+        }
+        println!("Header ID agreement does not validate signatures or encrypted contents.");
+        return;
+    }
+    let mut out = format!(
+        r#"{{"format":"ncsd_ncch_crosscheck","media_id":"0x{:016X}","checked_partitions":{},"compared_partition_ids":{},"matching_partition_ids":{},"signatures_verified":false,"encrypted_content_verified":false,"partitions":["#,
+        report.media_id, report.checked_entries.len(),
+        report.compared_partition_ids, report.matching_partition_ids
+    );
+    for (i, part) in report.checked_entries.iter().enumerate() {
+        if i != 0 { out.push(','); }
+        let matched = part.partition_id_matches.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        write!(&mut out,
+            r#"{{"index":{},"offset_bytes":{},"partition_size_bytes":{},"ncch_claimed_bytes":{},"ncsd_partition_id":"0x{:016X}","ncch_partition_id":"0x{:016X}","id_matches":{},"program_id":"0x{:016X}","product_code":{}}}"#,
+            part.index, part.ncsd_offset_bytes, part.ncsd_partition_bytes,
+            part.ncch_claimed_bytes, part.ncsd_partition_id, part.ncch_partition_id,
+            matched, part.ncch_program_id, json_string(&part.ncch_product_code)
+        ).expect("format NCSD-NCCH JSON");
+    }
+    out.push_str("]}");
+    println!("{out}");
+}
+
 fn run_cia_sections(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let report = inspect_cia(&mut file)?;
