@@ -8,11 +8,7 @@
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 
 const HEADER_LEN: usize = 64;
-const CANDIDATES: [(&str, u64); 3] = [
-    ("lorom", 0x7fc0),
-    ("hirom", 0xffc0),
-    ("exhirom", 0x40ffc0),
-];
+const CANDIDATES: [(&str, u64); 3] = [("lorom", 0x7fc0), ("hirom", 0xffc0), ("exhirom", 0x40ffc0)];
 
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidData, message)
@@ -64,7 +60,11 @@ fn mode_matches(layout: &str, mode: u8) -> bool {
 }
 
 fn declared_size(code: u8) -> Option<u64> {
-    if code <= 15 { Some(1024u64 << code) } else { None }
+    if code <= 15 {
+        Some(1024u64 << code)
+    } else {
+        None
+    }
 }
 
 fn decode_title(raw: &[u8]) -> (String, bool) {
@@ -73,15 +73,25 @@ fn decode_title(raw: &[u8]) -> (String, bool) {
         None => &raw[..0],
     };
     let ascii = trimmed.iter().all(|b| b.is_ascii_graphic() || *b == b' ');
-    let title = trimmed.iter().map(|&b| {
-        if b.is_ascii_graphic() || b == b' ' { char::from(b) } else { '?' }
-    }).collect::<String>();
+    let title = trimmed
+        .iter()
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                char::from(b)
+            } else {
+                '?'
+            }
+        })
+        .collect::<String>();
     (title, ascii)
 }
 
 fn candidate(
-    raw: &[u8; HEADER_LEN], layout: &'static str,
-    copier_prefix: u64, offset: u64, total_file_bytes: u64
+    raw: &[u8; HEADER_LEN],
+    layout: &'static str,
+    copier_prefix: u64,
+    offset: u64,
+    total_file_bytes: u64,
 ) -> Option<SnesCandidate> {
     let (title, title_ascii_printable) = decode_title(&raw[..21]);
     let map_mode = raw[0x15];
@@ -94,9 +104,9 @@ fn candidate(
     // A single valid-looking field does not make a random file SNES. A
     // location-matching map-mode and title, or a checksum complement and a
     // plausible reset vector, are required for a candidate.
-    if title.is_empty() ||
-        !(map_match && title_ascii_printable ||
-          checksum_pair_valid && reset_vector_plausible && title_ascii_printable)
+    if title.is_empty()
+        || !(map_match && title_ascii_printable
+            || checksum_pair_valid && reset_vector_plausible && title_ascii_printable)
     {
         return None;
     }
@@ -104,16 +114,30 @@ fn candidate(
     let rom_bytes = total_file_bytes - copier_prefix;
     let size_reasonable = declared_rom.map(|bytes| bytes >= rom_bytes);
     let mut score = 0u8;
-    if map_match { score += 4; }
-    if checksum_pair_valid { score += 3; }
-    if title_ascii_printable { score += 2; }
-    if reset_vector_plausible { score += 1; }
-    if size_reasonable == Some(true) { score += 1; }
+    if map_match {
+        score += 4;
+    }
+    if checksum_pair_valid {
+        score += 3;
+    }
+    if title_ascii_printable {
+        score += 2;
+    }
+    if reset_vector_plausible {
+        score += 1;
+    }
+    if size_reasonable == Some(true) {
+        score += 1;
+    }
 
     Some(SnesCandidate {
-        layout, copier_prefix_bytes: copier_prefix,
-        header_offset_bytes: offset, title, title_ascii_printable,
-        map_mode, map_mode_matches_location: map_match,
+        layout,
+        copier_prefix_bytes: copier_prefix,
+        header_offset_bytes: offset,
+        title,
+        title_ascii_printable,
+        map_mode,
+        map_mode_matches_location: map_match,
         fast_rom_claimed: map_mode & 0x10 != 0,
         cartridge_type: raw[0x16],
         rom_size_code: raw[0x17],
@@ -122,13 +146,17 @@ fn candidate(
         ram_size_code: raw[0x18],
         declared_ram_capacity_bytes: if raw[0x18] == 0 {
             Some(0)
-        } else { declared_size(raw[0x18]) },
+        } else {
+            declared_size(raw[0x18])
+        },
         destination_code: raw[0x19],
         developer_code: raw[0x1a],
         rom_revision: raw[0x1b],
         checksum_complement_stored: complement,
         checksum_stored: checksum,
-        checksum_pair_valid, reset_vector, reset_vector_plausible,
+        checksum_pair_valid,
+        reset_vector,
+        reset_vector_plausible,
         evidence_score: score,
     })
 }
@@ -141,7 +169,10 @@ pub fn inspect_snes_headers<R: Read + Seek>(reader: &mut R) -> io::Result<SnesHe
     for prefix in [0u64, 512u64] {
         for &(layout, position) in &CANDIDATES {
             let offset = prefix + position;
-            if offset.checked_add(HEADER_LEN as u64).is_none_or(|end| end > length) {
+            if offset
+                .checked_add(HEADER_LEN as u64)
+                .is_none_or(|end| end > length)
+            {
                 continue;
             }
             reader.seek(SeekFrom::Start(offset))?;
@@ -153,16 +184,25 @@ pub fn inspect_snes_headers<R: Read + Seek>(reader: &mut R) -> io::Result<SnesHe
         }
     }
     if candidates.is_empty() {
-        return Err(invalid("no plausible SNES internal header candidates found"));
+        return Err(invalid(
+            "no plausible SNES internal header candidates found",
+        ));
     }
-    candidates.sort_by(|a, b| b.evidence_score.cmp(&a.evidence_score)
-        .then_with(|| a.header_offset_bytes.cmp(&b.header_offset_bytes)));
+    candidates.sort_by(|a, b| {
+        b.evidence_score
+            .cmp(&a.evidence_score)
+            .then_with(|| a.header_offset_bytes.cmp(&b.header_offset_bytes))
+    });
     let best_candidate_index =
         if candidates.len() == 1 || candidates[0].evidence_score > candidates[1].evidence_score {
             Some(0)
-        } else { None };
+        } else {
+            None
+        };
     Ok(SnesHeaderReport {
-        file_bytes: length, candidates, best_candidate_index,
+        file_bytes: length,
+        candidates,
+        best_candidate_index,
         full_rom_checksum_verified: false,
     })
 }
@@ -173,7 +213,11 @@ mod tests {
     use std::io::Cursor;
 
     fn rom(layout: &str, copier: bool, good_pair: bool) -> Vec<u8> {
-        let len = if layout == "exhirom" { 0x500000 } else { 0x20000 };
+        let len = if layout == "exhirom" {
+            0x500000
+        } else {
+            0x20000
+        };
         let prefix = if copier { 512 } else { 0 };
         let mut data = vec![0u8; len + prefix];
         let offset = match layout {
@@ -181,21 +225,20 @@ mod tests {
             "hirom" => 0xffc0,
             _ => 0x40ffc0,
         } + prefix;
-        data[offset..offset+12].copy_from_slice(b"EXAMPLE GAME");
-        data[offset+0x15] = match layout {
+        data[offset..offset + 12].copy_from_slice(b"EXAMPLE GAME");
+        data[offset + 0x15] = match layout {
             "lorom" => 0x20,
             "hirom" => 0x31,
             _ => 0x35,
         };
-        data[offset+0x16] = 2;
-        data[offset+0x17] = if layout == "exhirom" { 13 } else { 7 };
-        data[offset+0x18] = 5;
-        data[offset+0x19] = 1;
-        data[offset+0x1c..offset+0x1e].copy_from_slice(
-            &(if good_pair {0xedcbu16} else {0u16}).to_le_bytes()
-        );
-        data[offset+0x1e..offset+0x20].copy_from_slice(&0x1234u16.to_le_bytes());
-        data[offset+0x3c..offset+0x3e].copy_from_slice(&0x8000u16.to_le_bytes());
+        data[offset + 0x16] = 2;
+        data[offset + 0x17] = if layout == "exhirom" { 13 } else { 7 };
+        data[offset + 0x18] = 5;
+        data[offset + 0x19] = 1;
+        data[offset + 0x1c..offset + 0x1e]
+            .copy_from_slice(&(if good_pair { 0xedcbu16 } else { 0u16 }).to_le_bytes());
+        data[offset + 0x1e..offset + 0x20].copy_from_slice(&0x1234u16.to_le_bytes());
+        data[offset + 0x3c..offset + 0x3e].copy_from_slice(&0x8000u16.to_le_bytes());
         data
     }
 

@@ -15,8 +15,8 @@ use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
-use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
 use ninforge::snes::{inspect_snes_headers, SnesHeaderReport};
+use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
 use ninforge::wii::{
     inspect_wii_disc, inspect_wii_partition_headers, validate_wbfs_maps, WbfsMapReport,
     WiiDiscReport, WiiPartitionHeader,
@@ -770,7 +770,10 @@ fn run_snes_header(path: &str, json: bool) -> Result<(), Box<dyn std::error::Err
 
 fn print_snes_header(report: &SnesHeaderReport, json: bool) {
     if !json {
-        println!("SNES: {} plausible header candidates", report.candidates.len());
+        println!(
+            "SNES: {} plausible header candidates",
+            report.candidates.len()
+        );
         for (index, item) in report.candidates.iter().enumerate() {
             println!(
                 "candidate={} layout={} copier_prefix={} header_offset={} title={} map_mode=0x{:02X} complement_pair={} reset_vector=0x{:04X} score={}",
@@ -785,24 +788,28 @@ fn print_snes_header(report: &SnesHeaderReport, json: bool) {
         println!("Full ROM checksum, mapper hardware and cartridge authenticity NOT verified.");
         return;
     }
-    let best = report.best_candidate_index.map_or_else(
-        || "null".to_owned(), |index| index.to_string()
-    );
+    let best = report
+        .best_candidate_index
+        .map_or_else(|| "null".to_owned(), |index| index.to_string());
     let mut out = format!(
         r#"{{"format":"snes_header_candidates","file_bytes":{},"candidate_count":{},"best_candidate_index":{},"full_rom_checksum_verified":false,"candidates":["#,
-        report.file_bytes, report.candidates.len(), best
+        report.file_bytes,
+        report.candidates.len(),
+        best
     );
     for (i, item) in report.candidates.iter().enumerate() {
-        if i != 0 { out.push(','); }
-        let capacity = item.declared_rom_capacity_bytes.map_or_else(
-            || "null".to_owned(), |value| value.to_string()
-        );
-        let ram = item.declared_ram_capacity_bytes.map_or_else(
-            || "null".to_owned(), |value| value.to_string()
-        );
-        let at_least = item.declared_rom_capacity_at_least_file.map_or_else(
-            || "null".to_owned(), |value| value.to_string()
-        );
+        if i != 0 {
+            out.push(',');
+        }
+        let capacity = item
+            .declared_rom_capacity_bytes
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
+        let ram = item
+            .declared_ram_capacity_bytes
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
+        let at_least = item
+            .declared_rom_capacity_at_least_file
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
         write!(&mut out,
             r#"{{"layout":{},"copier_prefix_bytes":{},"header_offset_bytes":{},"title":{},"title_ascii_printable":{},"map_mode":{},"map_mode_matches_location":{},"fast_rom_claimed":{},"cartridge_type":{},"rom_size_code":{},"declared_rom_capacity_bytes":{},"declared_rom_capacity_at_least_file":{},"ram_size_code":{},"declared_ram_capacity_bytes":{},"destination_code":{},"developer_code":{},"rom_revision":{},"checksum_complement_stored":{},"checksum_stored":{},"checksum_pair_valid":{},"reset_vector":{},"reset_vector_plausible":{},"evidence_score":{}}}"#,
             json_string(item.layout),
