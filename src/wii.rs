@@ -541,6 +541,80 @@ mod tests {
         assert!(inspect_wii_disc(&mut Cursor::new(&raw), raw.len() as u64).is_err());
     }
 
+    fn partition_header_fixture() -> Vec<u8> {
+        let mut raw = disc(&[(0, vec![(0x50000, 0)])]);
+        let p = 0x50000usize;
+        // Layout fields follow the 0x2a4 ticket. Offsets and data size use
+        // 32-bit big-endian words, TMD and cert lengths use plain bytes.
+        for (field, value) in [
+            (0x2a4, 0x100u32), // TMD bytes
+            (0x2a8, 0x2c0 / 4), // TMD offset in words
+            (0x2ac, 0x80), // certificate bytes
+            (0x2b0, 0x3c0 / 4), // certificate relative offset
+            (0x2b4, 0x4000 / 4), // H3 relative offset
+            (0x2b8, 0x20000 / 4), // encrypted data relative offset
+            (0x2bc, 0x8000 / 4), // encrypted data length
+        ] {
+            raw[p + field..p + field + 4].copy_from_slice(&value.to_be_bytes());
+        }
+        raw
+    }
+
+    #[test]
+    fn wii_partition_header_reads_unencrypted_spans() {
+        let raw = partition_header_fixture();
+        let result = inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        let item = &result[0];
+        assert_eq!(item.group, 0);
+        assert_eq!(item.partition_type, 0);
+        assert_eq!(item.tmd_offset_bytes, 0x502c0);
+        assert_eq!(item.tmd_size_bytes, 0x100);
+        assert_eq!(item.cert_offset_bytes, Some(0x503c0));
+        assert_eq!(item.h3_offset_bytes, Some(0x54000));
+        assert_eq!(item.data_offset_bytes, 0x70000);
+        assert_eq!(item.data_size_bytes, 0x8000);
+    }
+
+    #[test]
+    fn wii_partition_header_rejects_invalid_metadata() {
+        let mut raw = partition_header_fixture();
+        let p = 0x50000usize;
+        raw[p + 0x2a8..p + 0x2ac].copy_from_slice(&0x80u32.to_be_bytes());
+        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap_err().to_string().contains("overlaps its header"));
+        raw = partition_header_fixture();
+        raw[p + 0x2b8..p + 0x2bc].copy_from_slice(&(0x30000u32 / 4).to_be_bytes());
+        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap_err().to_string().contains("data extent outside ISO"));
+        raw = partition_header_fixture();
+        raw[p + 0x2bc..p + 0x2c0].copy_from_slice(&0u32.to_be_bytes());
+        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap_err().to_string().contains("empty data"));
+        raw = partition_header_fixture();
+        raw[p + 0x2b4..p + 0x2b8].copy_from_slice(&(0x10000u32 / 4).to_be_bytes());
+        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap_err().to_string().contains("outside header area"));
+        raw = partition_header_fixture();
+        raw[p + 0x2b0..p + 0x2b4].copy_from_slice(&(0x320u32 / 4).to_be_bytes());
+        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap_err().to_string().contains("overlap"));
+    }
+
+    #[test]
+    fn wii_partition_header_supports_optional_cert_and_h3_absence() {
+        let mut raw = partition_header_fixture();
+        let p = 0x50000usize;
+        for field in [0x2ac, 0x2b0, 0x2b4] {
+            raw[p + field..p + field + 4].fill(0);
+        }
+        let result = inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+            .unwrap();
+        assert_eq!(result[0].cert_offset_bytes, None);
+        assert_eq!(result[0].h3_offset_bytes, None);
+    }
+
     #[test]
     fn refuses_excessive_partition_counts() {
         let mut raw = disc(&[]);
