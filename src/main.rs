@@ -10,6 +10,7 @@ use ninforge::package::{
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
 use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
+use ninforge::wii::{inspect_wii_disc, WiiDiscReport};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -68,6 +69,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         report.entries.len()
                     );
                 }
+                Format::Wii => {
+                    println!("OK: Wii disc partition-table offsets are structurally bounded (encrypted partition data not verified)");
+                }
+                Format::WiiWbfs => {
+                    println!("OK: WBFS superblock and disc-slot table are structurally readable (disc block maps and game data not verified)");
+                }
                 _ => {
                     require_sections(&report)?;
                     println!(
@@ -76,6 +83,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "wii" && action == "partitions" => {
+            run_wii_partitions(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "wii" && action == "partitions" && flag == "--json" => {
+            run_wii_partitions(file, true)?;
         }
         [platform, save, action, file]
             if platform == "nds" && save == "save" && action == "info" =>
@@ -289,7 +303,8 @@ Usage:
   ninforge info <file> [--json]            Detect format and inspect header
   ninforge inspect <file> [--json]         Alias for info
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
-  ninforge verify <file>                   Validate NSP/HFS0/XCI/DS bounds
+  ninforge verify <file>                   Validate supported structural/checksum checks
+  ninforge wii partitions <iso> [--json]  Index Wii ISO partition table (not decrypt)
   ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
   ninforge nacp info <file> [--json]       Read decrypted control.nacp metadata
@@ -353,6 +368,64 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
             .expect("formatting JSON string");
     }
     output.push_str("}}");
+    println!("{output}");
+}
+
+/// Wii ISO partition positions are addresses; their sizes and encrypted
+/// contents have not been validated and are never exposed to extraction.
+fn run_wii_partitions(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = inspect(&mut file)?;
+    if report.format != Format::Wii {
+        return Err("wii partitions requires a raw Wii ISO, not a WBFS container".into());
+    }
+    let disc = inspect_wii_disc(&mut file, report.bytes)?;
+    print_wii_partitions(&disc, json);
+    Ok(())
+}
+
+fn print_wii_partitions(disc: &WiiDiscReport, json: bool) {
+    if !json {
+        println!("Wii partition groups: {:?}", disc.group_counts);
+        println!("Partition entries: {}", disc.partitions.len());
+        for part in &disc.partitions {
+            println!(
+                "group={} index={} offset={} type={} ({})",
+                part.group, part.index, part.offset_bytes,
+                part.partition_type, part.kind()
+            );
+        }
+        println!("Encrypted partitions and their lengths are not verified.");
+        return;
+    }
+    let mut output = format!(
+        r#"{{"format":"wii_partition_table","partition_count":{},"groups":["#,
+        disc.partitions.len()
+    );
+    for group in 0..4 {
+        if group > 0 { output.push(','); }
+        let pointer = disc.group_table_offsets[group].map_or_else(
+            || "null".to_string(), |offset| offset.to_string()
+        );
+        write!(&mut output, r#"{{"index":{},"count":{},"table_offset_bytes":{}}}"#,
+            group, disc.group_counts[group], pointer
+        ).expect("String write");
+    }
+    output.push_str(r#"],"region_code":"#);
+    output.push_str(&disc.region_code.map_or_else(
+        || "null".to_owned(), |code| code.to_string()
+    ));
+    output.push_str(r#","partitions":["#);
+    for (index, part) in disc.partitions.iter().enumerate() {
+        if index > 0 { output.push(','); }
+        write!(
+            &mut output,
+            r#"{{"group":{},"index":{},"offset_bytes":{},"type":{},"type_name":{}}}"#,
+            part.group, part.index, part.offset_bytes,
+            part.partition_type, json_string(part.kind())
+        ).expect("String write");
+    }
+    output.push_str(r#"],"encrypted_content_verified":false}"#);
     println!("{output}");
 }
 
