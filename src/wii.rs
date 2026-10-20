@@ -249,7 +249,9 @@ pub fn validate_wbfs_maps<R: Read + Seek>(
     let wbfs = header.wbfs_sector_bytes;
     let physical_blocks = header.declared_capacity_bytes / wbfs;
     if physical_blocks < 2 || physical_blocks > u16::MAX as u64 {
-        return Err(bad("WBFS physical block count cannot be represented by wlba indices"));
+        return Err(bad(
+            "WBFS physical block count cannot be represented by wlba indices",
+        ));
     }
 
     let shift = wbfs.trailing_zeros() - 15;
@@ -261,7 +263,8 @@ pub fn validate_wbfs_maps<R: Read + Seek>(
     let disc_record_size = raw_info_size
         .checked_add(host - 1)
         .ok_or_else(|| bad("WBFS disc record alignment overflow"))?
-        / host * host;
+        / host
+        * host;
 
     // The original layout keeps a free-block bitmap at the end of WBFS
     // sector zero. Disc metadata may not overlap this reserved area.
@@ -280,7 +283,8 @@ pub fn validate_wbfs_maps<R: Read + Seek>(
         return Err(bad("WBFS occupied slot exceeds disc metadata capacity"));
     }
     let occupied: Vec<usize> = slot_bytes[..valid_slots]
-        .iter().enumerate()
+        .iter()
+        .enumerate()
         .filter_map(|(index, flag)| match *flag {
             0 => None,
             _ => Some(index),
@@ -300,7 +304,9 @@ pub fn validate_wbfs_maps<R: Read + Seek>(
         let start = host + slot as u64 * disc_record_size;
         let end = start + disc_record_size;
         if end > bitmap_start || end > file_bytes {
-            return Err(bad("WBFS occupied disc record truncated or overlaps bitmap"));
+            return Err(bad(
+                "WBFS occupied disc record truncated or overlaps bitmap",
+            ));
         }
         let mut record = vec![0u8; raw_info_size as usize];
         read_at(input, start, &mut record)?;
@@ -336,8 +342,12 @@ pub fn validate_wbfs_maps<R: Read + Seek>(
             last = Some(last.map_or(address, |prev: u16| prev.max(address)));
         }
         discs.push(WbfsDiscMap {
-            slot, disc_id, info_offset_bytes: start, mapped_blocks: mapped,
-            logical_blocks, last_physical_block: last,
+            slot,
+            disc_id,
+            info_offset_bytes: start,
+            mapped_blocks: mapped,
+            logical_blocks,
+            last_physical_block: last,
         });
     }
     Ok(WbfsMapReport {
@@ -456,10 +466,9 @@ mod tests {
         let first = 512;
         let second = 512 + 9728;
         for (slot, offset, block) in [(0, first, 1u16), (1, second, 2u16)] {
-            data[offset..offset+6].copy_from_slice(if slot == 0 {b"DEMO01"} else {b"DEMO02"});
-            data[offset+0x18..offset+0x1c]
-                .copy_from_slice(&[0x5d,0x1c,0x9e,0xa3]);
-            data[offset+0x100..offset+0x102].copy_from_slice(&block.to_be_bytes());
+            data[offset..offset + 6].copy_from_slice(if slot == 0 { b"DEMO01" } else { b"DEMO02" });
+            data[offset + 0x18..offset + 0x1c].copy_from_slice(&[0x5d, 0x1c, 0x9e, 0xa3]);
+            data[offset + 0x100..offset + 0x102].copy_from_slice(&block.to_be_bytes());
         }
         data
     }
@@ -488,20 +497,36 @@ mod tests {
         // Clear the first physical mapping so the *record truncation* is
         // reached before checking any allocated game-data blocks.
         truncated[512 + 0x100..512 + 0x102].copy_from_slice(&0u16.to_be_bytes());
-        assert!(validate_wbfs_maps(&mut Cursor::new(&truncated), truncated.len() as u64)
-            .unwrap_err().to_string().contains("disc record truncated"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&truncated), truncated.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("disc record truncated")
+        );
         let mut corrupted = image.clone();
         corrupted[512 + 0x18] ^= 1;
-        assert!(validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
-            .unwrap_err().to_string().contains("disc magic"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("disc magic")
+        );
         corrupted = image.clone();
         corrupted[13] = 2; // original WBFS slot occupancy is 0 or 1
-        assert!(validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
-            .unwrap_err().to_string().contains("occupancy"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("occupancy")
+        );
         corrupted = image;
         corrupted[0x0c + 400] = 1; // beyond disc metadata capacity
-        assert!(validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
-            .unwrap_err().to_string().contains("metadata capacity"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("metadata capacity")
+        );
     }
 
     #[test]
@@ -509,20 +534,36 @@ mod tests {
         let image = wbfs_mapped();
         let mut invalid = image.clone();
         invalid[512 + 0x100..512 + 0x102].copy_from_slice(&4u16.to_be_bytes());
-        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
-            .unwrap_err().to_string().contains("volume capacity"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("volume capacity")
+        );
         invalid = image.clone();
         invalid[512 + 0x102..512 + 0x104].copy_from_slice(&1u16.to_be_bytes());
-        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
-            .unwrap_err().to_string().contains("duplicate physical"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate physical")
+        );
         invalid = image.clone();
         invalid[10240 + 0x100..10240 + 0x102].copy_from_slice(&1u16.to_be_bytes());
-        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
-            .unwrap_err().to_string().contains("duplicate physical"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate physical")
+        );
         invalid = image;
         invalid.truncate(2 * (1 << 21) + 1024);
-        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
-            .unwrap_err().to_string().contains("beyond supplied file"));
+        assert!(
+            validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("beyond supplied file")
+        );
     }
 
     #[test]

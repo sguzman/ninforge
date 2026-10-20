@@ -88,7 +88,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_wbfs_check(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "wii" && action == "wbfs-check" && flag == "--json" => {
+            if platform == "wii" && action == "wbfs-check" && flag == "--json" =>
+        {
             run_wbfs_check(file, true)?;
         }
         [platform, action, file] if platform == "wii" && action == "partitions" => {
@@ -410,14 +411,16 @@ fn print_wbfs_check(report: &WbfsMapReport, json: bool) {
     if !json {
         println!(
             "WBFS: {} occupied records, {} mapped blocks (record {} bytes)",
-            report.checked_slots, report.mapped_blocks_total,
-            report.disc_record_size_bytes,
+            report.checked_slots, report.mapped_blocks_total, report.disc_record_size_bytes,
         );
         for disc in &report.discs {
             println!(
                 "slot={} id={} mapped_blocks={} logical_blocks={} info_offset={}",
-                disc.slot, disc.disc_id, disc.mapped_blocks,
-                disc.logical_blocks, disc.info_offset_bytes
+                disc.slot,
+                disc.disc_id,
+                disc.mapped_blocks,
+                disc.logical_blocks,
+                disc.info_offset_bytes
             );
         }
         println!("Block references are within file bounds; game data and cryptographic hashes are NOT verified.");
@@ -425,17 +428,23 @@ fn print_wbfs_check(report: &WbfsMapReport, json: bool) {
     }
     let mut output = format!(
         r#"{{"format":"wbfs_map_check","occupied_slots":{},"mapped_blocks":{},"host_sector_bytes":{},"wbfs_sector_bytes":{},"declared_capacity_bytes":{},"disc_record_size_bytes":{},"physical_block_count":{},"logical_blocks_per_disc":{},"block_references_within_file":{},"encrypted_content_verified":false,"discs":["#,
-        report.checked_slots, report.mapped_blocks_total,
-        report.host_sector_bytes, report.wbfs_sector_bytes,
-        report.declared_capacity_bytes, report.disc_record_size_bytes,
-        report.physical_block_count, report.logical_blocks_per_disc,
+        report.checked_slots,
+        report.mapped_blocks_total,
+        report.host_sector_bytes,
+        report.wbfs_sector_bytes,
+        report.declared_capacity_bytes,
+        report.disc_record_size_bytes,
+        report.physical_block_count,
+        report.logical_blocks_per_disc,
         report.block_references_within_file,
     );
     for (index, disc) in report.discs.iter().enumerate() {
-        if index != 0 { output.push(','); }
-        let last = disc.last_physical_block.map_or_else(
-            || "null".to_owned(), |value| value.to_string()
-        );
+        if index != 0 {
+            output.push(',');
+        }
+        let last = disc
+            .last_physical_block
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
         write!(
             &mut output,
             r#"{{"slot":{},"disc_id":{},"info_offset_bytes":{},"mapped_blocks":{},"logical_blocks":{},"last_physical_block":{}}}"#,
