@@ -177,3 +177,69 @@ fn invalid_wbfs_parameters_fail_without_writes() {
     assert!(String::from_utf8_lossy(&info.stderr).contains("WBFS"));
     assert_eq!(fs::read(&file.file).unwrap(), data);
 }
+
+
+fn mapped_wbfs() -> Vec<u8> {
+    let mut data = vec![0u8; 4 * (1 << 21)];
+    data[..4].copy_from_slice(b"WBFS");
+    data[4..8].copy_from_slice(&16384u32.to_be_bytes());
+    data[8] = 9; data[9] = 21;
+    data[12] = 1;
+    data[512..518].copy_from_slice(b"DEMO01");
+    data[512 + 0x18..512 + 0x1c].copy_from_slice(&[0x5d,0x1c,0x9e,0xa3]);
+    data[512 + 0x100..512 + 0x102].copy_from_slice(&1u16.to_be_bytes());
+    data
+}
+
+fn wbfs_check(file: &Fixture, json: bool) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ninforge"));
+    command.args(["wii", "wbfs-check"]).arg(&file.file);
+    if json { command.arg("--json"); }
+    command.output().unwrap()
+}
+
+#[test]
+fn deep_check_validates_synthetic_slot_and_block_map_as_read_only() {
+    let raw = mapped_wbfs();
+    let file = Fixture::new(&raw);
+    let report = wbfs_check(&file, true);
+    assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
+    let json = String::from_utf8(report.stdout).unwrap();
+    assert!(json.contains(r#""format":"wbfs_map_check""#));
+    assert!(json.contains(r#""disc_record_size_bytes":9728"#));
+    assert!(json.contains(r#""logical_blocks_per_disc":4482"#));
+    assert!(json.contains(r#""disc_id":"DEMO01""#));
+    assert!(json.contains(r#""mapped_blocks":1"#));
+    assert!(json.contains(r#""block_references_within_file":true"#));
+    assert!(json.contains(r#""encrypted_content_verified":false"#));
+    let text = wbfs_check(&file, false);
+    assert!(text.status.success());
+    assert!(String::from_utf8(text.stdout).unwrap().contains("game data and cryptographic hashes are NOT verified"));
+    assert_eq!(fs::read(&file.file).unwrap(), raw);
+}
+
+#[test]
+fn deep_check_rejects_invalid_maps_without_breaking_fast_info() {
+    let mut raw = mapped_wbfs();
+    raw[512 + 0x100..512 + 0x102].copy_from_slice(&5u16.to_be_bytes());
+    let file = Fixture::new(&raw);
+    let info = file.run(&["info"]);
+    assert!(info.status.success()); // superblock-only remains cheap
+    let check = wbfs_check(&file, true);
+    assert!(!check.status.success());
+    assert!(check.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&check.stderr).contains("volume capacity"));
+}
+
+#[test]
+fn deep_check_rejects_truncated_records_and_wrong_input_format() {
+    let raw = mapped_wbfs();
+    let truncated = Fixture::new(&raw[..550]);
+    let check = wbfs_check(&truncated, true);
+    assert!(!check.status.success());
+    assert!(String::from_utf8_lossy(&check.stderr).contains("record truncated"));
+    let wii_iso = Fixture::new(&iso());
+    let check = wbfs_check(&wii_iso, true);
+    assert!(!check.status.success());
+    assert!(String::from_utf8_lossy(&check.stderr).contains("requires a WBFS container"));
+}
