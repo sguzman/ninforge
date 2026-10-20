@@ -251,3 +251,58 @@ fn deep_check_rejects_truncated_records_and_wrong_input_format() {
     assert!(!check.status.success());
     assert!(String::from_utf8_lossy(&check.stderr).contains("requires a WBFS container"));
 }
+
+
+fn iso_with_partition_headers() -> Vec<u8> {
+    let mut image = iso();
+    for partition in [0x50000usize, 0x70000usize] {
+        for (field, value) in [
+            (0x2a4, 0x100u32),
+            (0x2a8, 0x2c0 / 4),
+            (0x2b8, 0x10000 / 4),
+            (0x2bc, 0x8000 / 4),
+        ] {
+            image[partition + field..partition + field + 4]
+                .copy_from_slice(&value.to_be_bytes());
+        }
+    }
+    image
+}
+fn wii_partition_check(file: &Fixture, json: bool) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ninforge"));
+    command.args(["wii", "partition-check"]).arg(&file.file);
+    if json { command.arg("--json"); }
+    command.output().unwrap()
+}
+
+#[test]
+fn partition_header_check_reports_bounded_tmd_and_data_extents() {
+    let data = iso_with_partition_headers();
+    let fixture = Fixture::new(&data);
+    let output = wii_partition_check(&fixture, true);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json = String::from_utf8(output.stdout).unwrap();
+    assert!(json.contains(r#""format":"wii_partition_header_check""#));
+    assert!(json.contains(r#""partition_count":2"#));
+    assert!(json.contains(r#""partition_offset_bytes":327680"#));
+    assert!(json.contains(r#""data_offset_bytes":393216"#));
+    assert!(json.contains(r#""tmd_size_bytes":256"#));
+    assert!(json.contains(r#""signature_verified":false"#));
+    assert!(json.contains(r#""encrypted_content_verified":false"#));
+    assert!(wii_partition_check(&fixture, false).status.success());
+    assert_eq!(fs::read(&fixture.file).unwrap(), data);
+}
+
+#[test]
+fn damaged_partition_extent_fails_deep_check_not_fast_info() {
+    let mut data = iso_with_partition_headers();
+    data[0x70000 + 0x2bc..0x70000 + 0x2c0]
+        .copy_from_slice(&(0x100000u32 / 4).to_be_bytes());
+    let fixture = Fixture::new(&data);
+    assert!(fixture.run(&["info"]).status.success());
+    let checked = wii_partition_check(&fixture, true);
+    assert!(!checked.status.success());
+    assert!(checked.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&checked.stderr).contains("data extent outside ISO"));
+    assert_eq!(fs::read(&fixture.file).unwrap(), data);
+}
