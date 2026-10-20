@@ -1,0 +1,28 @@
+name: Ninforge temporary DS banner QA
+on:
+  push:
+    branches: [feat/bootstrap-format-inspection]
+permissions:
+  contents: write
+jobs:
+  format-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked --all-targets
+      - name: Save rustfmt output to existing development branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ tests/
+          if ! git diff --cached --quiet; then
+            git commit -m 'style: rustfmt DS banner reader and fixtures'
+            git push origin HEAD:feat/bootstrap-format-inspection
+          fi
