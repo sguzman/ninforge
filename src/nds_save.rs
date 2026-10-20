@@ -362,7 +362,6 @@ mod tests {
         assert_eq!(report.kind, DsSaveKind::RawOrUnknown);
     }
 
-
     struct ReadCounter<'a> {
         source: Cursor<&'a [u8]>,
         read_bytes: usize,

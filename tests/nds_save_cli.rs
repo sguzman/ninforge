@@ -137,7 +137,6 @@ fn defective_dsv_and_nogba_fail_cleanly_without_modifying_bytes() {
     assert_eq!(fs::read(&nogba_file.file).unwrap(), bad);
 }
 
-
 fn action_replay(payload_len: usize) -> Vec<u8> {
     let mut file = vec![0u8; 500 + payload_len];
     file[..8].copy_from_slice(b"ARDS0001");
@@ -150,7 +149,11 @@ fn action_replay_header_identified_by_magic_without_game_guessing() {
     let bytes = action_replay(32768);
     let file = Fixture::new(&bytes, "does-not-matter.sav");
     let output = file.run(true);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains(r#""format":"action_replay_ds""#));
     assert!(text.contains(r#""wrapper_size_bytes":"500""#));
