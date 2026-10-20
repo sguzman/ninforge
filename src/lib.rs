@@ -4,6 +4,7 @@
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
 pub mod cnmt;
+pub mod gb;
 mod hfs0;
 pub mod metadata_dir;
 pub mod nacp;
@@ -175,8 +176,7 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
             "title",
             ascii_field(&head[0x134..if cgb { 0x13f } else { 0x144 }]),
         );
-        report.add("cartridge_type", format!("0x{:02x}", head[0x147]));
-        report.add("rom_size_code", format!("0x{:02x}", head[0x148]));
+        report.metadata.extend(gb::metadata(&head, bytes));
     } else if is_gba(&head) {
         report.format = Format::GameBoyAdvance;
         report.add("title", ascii_field(&head[0xa0..0xac]));
@@ -374,19 +374,10 @@ fn is_nds(head: &[u8]) -> bool {
         && head[0x15c..0x15e] == [0x56, 0xcf]
         && head[12..16].iter().all(|b| b.is_ascii_alphanumeric())
 }
-const GB_LOGO: [u8; 48] = [
-    0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d,
-    0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e, 0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99,
-    0xbb, 0xbb, 0x67, 0x63, 0x6e, 0x0e, 0xec, 0xcc, 0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e,
-];
 fn is_game_boy(head: &[u8]) -> bool {
-    if head.len() < 0x150 || &head[0x104..0x134] != GB_LOGO.as_slice() {
-        return false;
-    }
-    let checksum = head[0x134..0x14d]
-        .iter()
-        .fold(0u8, |sum, byte| sum.wrapping_sub(*byte).wrapping_sub(1));
-    checksum == head[0x14d]
+    // A damaged checksum should not hide an otherwise recognizable ROM from
+    // "info"; the explicit verify operation enforces checksum correctness.
+    gb::has_logo(head)
 }
 
 #[cfg(test)]
@@ -586,7 +577,7 @@ mod tests {
     #[test]
     fn recognizes_synthetic_game_boy_header() {
         let mut bytes = vec![0u8; 0x150];
-        bytes[0x104..0x134].copy_from_slice(&GB_LOGO);
+        bytes[0x104..0x134].copy_from_slice(&gb::LOGO);
         bytes[0x134..0x138].copy_from_slice(b"DEMO");
         bytes[0x143] = 0x80;
         bytes[0x14d] = bytes[0x134..0x14d]
