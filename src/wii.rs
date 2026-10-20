@@ -485,6 +485,9 @@ mod tests {
         let image = wbfs_mapped();
         let mut truncated = image.clone();
         truncated.truncate(10240 + 100);
+        // Clear the first physical mapping so the *record truncation* is
+        // reached before checking any allocated game-data blocks.
+        truncated[512 + 0x100..512 + 0x102].copy_from_slice(&0u16.to_be_bytes());
         assert!(validate_wbfs_maps(&mut Cursor::new(&truncated), truncated.len() as u64)
             .unwrap_err().to_string().contains("disc record truncated"));
         let mut corrupted = image.clone();
