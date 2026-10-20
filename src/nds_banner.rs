@@ -1,6 +1,7 @@
 //! Read-only Nintendo DS/DSi cartridge icon/banner metadata.
 //! Banner location is an NDS cartridge header field, not an arbitrary scan.
 //! Sizes and CRC regions follow GBATEK and ndstool. Icon pixels are not decoded.
+use crate::nds_crc::crc16;
 use crate::Entry;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 
@@ -23,23 +24,6 @@ fn bad(message: &'static str) -> io::Error {
 pub(crate) struct Banner {
     pub entry: Entry,
     pub metadata: Vec<(String, String)>,
-}
-
-/// CRC-16/IBM (reflected poly 0xA001, init 0xFFFF), used for NDS
-/// banner checksum regions; never mistaken for a cryptographic signature.
-fn crc16(data: &[u8]) -> u16 {
-    let mut crc = 0xffffu16;
-    for &byte in data {
-        crc ^= u16::from(byte);
-        for _ in 0..8 {
-            crc = if crc & 1 != 0 {
-                (crc >> 1) ^ 0xa001
-            } else {
-                crc >> 1
-            };
-        }
-    }
-    crc
 }
 
 fn version_size(version: u16) -> Option<(usize, usize, usize)> {
