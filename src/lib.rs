@@ -10,6 +10,7 @@ mod hfs0;
 pub mod metadata_dir;
 pub mod nacp;
 pub mod nca;
+pub mod ncsd;
 mod nds;
 mod nds_banner;
 mod nds_crc;
@@ -260,7 +261,16 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("entry_count", entries.len());
         report.entries = entries;
     } else if head.len() >= 0x104 && &head[0x100..0x104] == b"NCSD" {
+        let ncsd = ncsd::inspect_ncsd(&head, bytes)?;
         report.format = Format::Nintendo3dsCartridge;
+        report.add("media_id", format!("0x{:016X}", ncsd.media_id));
+        report.add("media_unit_bytes", ncsd.media_unit_bytes);
+        report.add("declared_media_size_bytes", ncsd.declared_media_bytes);
+        report.add("declared_media_size_matches_file", ncsd.declared_media_bytes == bytes);
+        report.add("media_type", ncsd.media_type);
+        report.add("partition_count", ncsd.partitions.len());
+        report.add("signature_verified", false);
+        report.add("encrypted_partition_contents_verified", false);
     } else if head.len() >= 0x204
         && (&head[0x200..0x204] == b"NCA2" || &head[0x200..0x204] == b"NCA3")
     {
