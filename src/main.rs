@@ -52,15 +52,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd, file] if cmd == "verify" => {
             let report = inspect(&mut File::open(file)?)?;
-            require_sections(&report)?;
-            if report.format == Format::NintendoDs {
-                verify_ds_checks(&report)?;
-                println!(
-                    "OK: {} region bounds and cartridge CRC-16 checks are valid (not a cryptographic signature)",
-                    report.entries.len()
-                );
-            } else {
-                println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
+            match report.format {
+                Format::GameBoy | Format::GameBoyColor => {
+                    let bytes = ninforge::gb::verify_game_boy(&mut File::open(file)?)?;
+                    println!(
+                        "OK: {} header, declared ROM size and global checksum match ({} bytes; additive CRC-free sum, not a signature)",
+                        report.format, bytes
+                    );
+                }
+                Format::NintendoDs => {
+                    require_sections(&report)?;
+                    verify_ds_checks(&report)?;
+                    println!(
+                        "OK: {} region bounds and cartridge CRC-16 checks are valid (not a cryptographic signature)",
+                        report.entries.len()
+                    );
+                }
+                _ => {
+                    require_sections(&report)?;
+                    println!(
+                        "OK: {} header and {} region bounds are structurally valid (not a hash/signature check)",
+                        report.format, report.entries.len()
+                    );
+                }
             }
         }
         [platform, save, action, file]
