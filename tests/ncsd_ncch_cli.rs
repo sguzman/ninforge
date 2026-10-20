@@ -24,35 +24,50 @@ fn image() -> Vec<u8> {
     data
 }
 
-struct Fixture { dir: PathBuf, file: PathBuf }
+struct Fixture {
+    dir: PathBuf,
+    file: PathBuf,
+}
 impl Fixture {
     fn new(data: &[u8]) -> Self {
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!(
             "ninforge-crosscheck-{}-{ts}-{}",
-            std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&dir).unwrap();
         let file = dir.join("input.bin");
         fs::write(&file, data).unwrap();
-        Self {dir,file}
+        Self { dir, file }
     }
     fn crosscheck(&self, json: bool) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_ninforge"));
-        command.args(["3ds","crosscheck"]).arg(&self.file);
-        if json {command.arg("--json");}
+        command.args(["3ds", "crosscheck"]).arg(&self.file);
+        if json {
+            command.arg("--json");
+        }
         command.output().unwrap()
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) {let _ = fs::remove_dir_all(&self.dir);}
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 #[test]
 fn matching_ncch_claims_can_be_examined_without_decryption() {
     let raw = image();
     let f = Fixture::new(&raw);
     let report = f.crosscheck(true);
-    assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
+    assert!(
+        report.status.success(),
+        "{}",
+        String::from_utf8_lossy(&report.stderr)
+    );
     let json = String::from_utf8(report.stdout).unwrap();
     assert!(json.contains(r#""format":"ncsd_ncch_crosscheck""#));
     assert!(json.contains(r#""checked_partitions":1"#));

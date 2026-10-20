@@ -108,7 +108,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_ncsd_crosscheck(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "3ds" && action == "crosscheck" && flag == "--json" => {
+            if platform == "3ds" && action == "crosscheck" && flag == "--json" =>
+        {
             run_ncsd_crosscheck(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "cia-sections" => {
@@ -529,14 +530,18 @@ fn print_ncsd_crosscheck(report: &NcsdNcchReport, json: bool) {
     if !json {
         println!(
             "NCSD/NCCH checked={} compared_ids={} matching_ids={}",
-            report.checked_entries.len(), report.compared_partition_ids,
+            report.checked_entries.len(),
+            report.compared_partition_ids,
             report.matching_partition_ids
         );
         for part in &report.checked_entries {
             println!(
                 "partition={} offset={} size={} ncch_claimed={} product={} id_match={:?}",
-                part.index, part.ncsd_offset_bytes, part.ncsd_partition_bytes,
-                part.ncch_claimed_bytes, part.ncch_product_code,
+                part.index,
+                part.ncsd_offset_bytes,
+                part.ncsd_partition_bytes,
+                part.ncch_claimed_bytes,
+                part.ncch_product_code,
                 part.partition_id_matches
             );
         }
@@ -545,14 +550,18 @@ fn print_ncsd_crosscheck(report: &NcsdNcchReport, json: bool) {
     }
     let mut out = format!(
         r#"{{"format":"ncsd_ncch_crosscheck","media_id":"0x{:016X}","checked_partitions":{},"compared_partition_ids":{},"matching_partition_ids":{},"signatures_verified":false,"encrypted_content_verified":false,"partitions":["#,
-        report.media_id, report.checked_entries.len(),
-        report.compared_partition_ids, report.matching_partition_ids
+        report.media_id,
+        report.checked_entries.len(),
+        report.compared_partition_ids,
+        report.matching_partition_ids
     );
     for (i, part) in report.checked_entries.iter().enumerate() {
-        if i != 0 { out.push(','); }
-        let matched = part.partition_id_matches.map_or_else(
-            || "null".to_owned(), |value| value.to_string()
-        );
+        if i != 0 {
+            out.push(',');
+        }
+        let matched = part
+            .partition_id_matches
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
         write!(&mut out,
             r#"{{"index":{},"offset_bytes":{},"partition_size_bytes":{},"ncch_claimed_bytes":{},"ncsd_partition_id":"0x{:016X}","ncch_partition_id":"0x{:016X}","id_matches":{},"program_id":"0x{:016X}","product_code":{}}}"#,
             part.index, part.ncsd_offset_bytes, part.ncsd_partition_bytes,

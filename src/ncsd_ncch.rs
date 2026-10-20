@@ -66,7 +66,9 @@ pub fn crosscheck<R: Read + Seek>(reader: &mut R) -> io::Result<NcsdNcchReport> 
         } else {
             compared += 1;
             let same = part.partition_id == inner.partition_id;
-            if same { matched += 1; }
+            if same {
+                matched += 1;
+            }
             Some(same)
         };
         checked_entries.push(NcsdNcchEntry {
@@ -83,9 +85,11 @@ pub fn crosscheck<R: Read + Seek>(reader: &mut R) -> io::Result<NcsdNcchReport> 
     }
     Ok(NcsdNcchReport {
         media_id: ncsd.media_id,
-        checked_entries, compared_partition_ids: compared,
+        checked_entries,
+        compared_partition_ids: compared,
         matching_partition_ids: matched,
-        signatures_verified: false, encrypted_content_verified: false,
+        signatures_verified: false,
+        encrypted_content_verified: false,
     })
 }
 
@@ -104,11 +108,11 @@ mod tests {
         raw[0x124..0x128].copy_from_slice(&24u32.to_le_bytes());
         raw[0x190..0x198].copy_from_slice(&0x1234u64.to_le_bytes());
         let p = 0x200;
-        raw[p+0x100..p+0x104].copy_from_slice(b"NCCH");
-        raw[p+0x104..p+0x108].copy_from_slice(&16u32.to_le_bytes());
-        raw[p+0x108..p+0x110].copy_from_slice(&0x1234u64.to_le_bytes());
-        raw[p+0x118..p+0x120].copy_from_slice(&0x5678u64.to_le_bytes());
-        raw[p+0x150..p+0x158].copy_from_slice(b"CTR-DEMO");
+        raw[p + 0x100..p + 0x104].copy_from_slice(b"NCCH");
+        raw[p + 0x104..p + 0x108].copy_from_slice(&16u32.to_le_bytes());
+        raw[p + 0x108..p + 0x110].copy_from_slice(&0x1234u64.to_le_bytes());
+        raw[p + 0x118..p + 0x120].copy_from_slice(&0x5678u64.to_le_bytes());
+        raw[p + 0x150..p + 0x158].copy_from_slice(b"CTR-DEMO");
         raw
     }
 
@@ -149,19 +153,25 @@ mod tests {
     fn rejects_wrong_inner_header_and_overlarge_claim() {
         let mut raw = sample();
         raw[0x300..0x304].fill(0);
-        assert!(crosscheck(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("NCCH"));
+        assert!(crosscheck(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("NCCH"));
         let mut raw = sample();
         raw[0x304..0x308].copy_from_slice(&30u32.to_le_bytes());
-        assert!(crosscheck(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("exceeds enclosing"));
+        assert!(crosscheck(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds enclosing"));
     }
 
     #[test]
     fn non_ncch_fs_type_is_rejected_explicitly() {
         let mut raw = sample();
         raw[0x110] = 3;
-        assert!(crosscheck(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("not an NCCH"));
+        assert!(crosscheck(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("not an NCCH"));
     }
 }
