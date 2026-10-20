@@ -16,6 +16,7 @@ pub mod nds_save;
 pub mod package;
 pub mod saves;
 pub mod title_inventory;
+pub mod wii;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -37,6 +38,7 @@ pub enum Format {
     Nintendo3dsCartridge,
     NintendoDs,
     Wii,
+    WiiWbfs,
     GameCube,
     GameBoyAdvance,
     GameBoy,
@@ -59,6 +61,7 @@ impl Format {
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
             Self::NintendoDs => "Nintendo DS",
             Self::Wii => "Wii disc",
+            Self::WiiWbfs => "Wii WBFS",
             Self::GameCube => "GameCube disc",
             Self::GameBoyAdvance => "Game Boy Advance",
             Self::GameBoy => "Game Boy",
@@ -80,7 +83,7 @@ impl Format {
             | Self::SwitchCnmt => "switch",
             Self::Nintendo3dsCartridge => "3ds",
             Self::NintendoDs => "ds",
-            Self::Wii => "wii",
+            Self::Wii | Self::WiiWbfs => "wii",
             Self::GameCube => "gamecube",
             Self::GameBoyAdvance => "gba",
             Self::GameBoy | Self::GameBoyColor => "gb",
@@ -128,7 +131,17 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         entries: Vec::new(),
     };
 
-    if head.starts_with(b"PFS0") {
+    if head.starts_with(b"WBFS") {
+        report.format = Format::WiiWbfs;
+        let header = wii::inspect_wbfs(input, bytes)?;
+        report.add("host_sector_bytes", header.host_sector_bytes);
+        report.add("wbfs_sector_bytes", header.wbfs_sector_bytes);
+        report.add("declared_host_sector_count", header.declared_host_sectors);
+        report.add("declared_capacity_bytes", header.declared_capacity_bytes);
+        report.add("occupied_disc_slots", header.occupied_disc_slots);
+        report.add("available_disc_slots", header.available_disc_slots);
+        report.add("block_map_verified", false);
+    } else if head.starts_with(b"PFS0") {
         report.format = Format::SwitchNsp;
         report.entries = parse_pfs0(input, bytes)?;
         report.add("entry_count", report.entries.len());
@@ -219,6 +232,19 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
     } else if head.len() >= 0x20 && &head[0x18..0x1c] == b"\x5d\x1c\x9e\xa3" && disc_id_ok(&head) {
         report.format = Format::Wii;
         report.add("game_id", ascii_field(&head[0..6]));
+        report.add("disc_number", head[6]);
+        report.add("disc_version", head[7]);
+        report.add("title", ascii_field(&head[0x20..head.len().min(0x60)]));
+        let disc = wii::inspect_wii_disc(input, bytes)?;
+        report.add("partition_count", disc.partitions.len());
+        for (group, count) in disc.group_counts.iter().enumerate() {
+            report.add(&format!("partition_group_{group}_count"), count);
+        }
+        if let Some(region) = disc.region_code {
+            report.add("region_code", region);
+        }
+        report.add("partition_offsets_checked", true);
+        report.add("partition_contents_decrypted", false);
     } else if head.len() >= 0x20 && &head[0x1c..0x20] == b"\xc2\x33\x9f\x3d" && disc_id_ok(&head) {
         report.format = Format::GameCube;
         report.add("game_id", ascii_field(&head[0..6]));

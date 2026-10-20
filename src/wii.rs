@@ -202,7 +202,7 @@ mod tests {
         let mut raw = vec![0u8; 0x80000];
         raw[0x18..0x1c].copy_from_slice(&[0x5d, 0x1c, 0x9e, 0xa3]);
         raw[..6].copy_from_slice(b"DEMO01");
-        raw[0x20..0x2a].copy_from_slice(b"Fixture Wii");
+        raw[0x20..0x2b].copy_from_slice(b"Fixture Wii");
         raw[0x4e000..0x4e004].copy_from_slice(&1u32.to_be_bytes());
         let mut cursor = 0x40020usize;
         for (group, entries) in groups {
