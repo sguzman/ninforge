@@ -29,7 +29,9 @@ impl Fixture {
     }
     fn check(&self, json: bool) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_ninforge"));
-        command.args(["gamecube", "apploader-check"]).arg(&self.image);
+        command
+            .args(["gamecube", "apploader-check"])
+            .arg(&self.image);
         if json {
             command.arg("--json");
         }
@@ -65,7 +67,11 @@ fn apploader_header_and_aligned_code_bounds_are_reported() {
     let bytes = disc();
     let fixture = Fixture::new(&bytes);
     let output = fixture.check(true);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""format":"gamecube_apploader""#));
     assert!(json.contains(r#""revision":"2001/01/01""#));

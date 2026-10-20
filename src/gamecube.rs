@@ -331,7 +331,9 @@ pub fn inspect_apploader<R: Read + Seek>(
         .iter()
         .any(|byte| !byte.is_ascii_graphic() && *byte != b' ')
     {
-        return Err(invalid("GameCube apploader revision contains non-ASCII bytes"));
+        return Err(invalid(
+            "GameCube apploader revision contains non-ASCII bytes",
+        ));
     }
     let revision = std::str::from_utf8(revision_bytes)
         .map_err(|_| invalid("GameCube apploader revision is invalid UTF-8"))?
