@@ -55,14 +55,18 @@ fn be32(data: &[u8]) -> u32 {
 }
 
 fn ascii_field(bytes: &[u8]) -> (String, bool) {
-    let valid = bytes.iter().all(|c| *c == 0 || *c == b' ' || c.is_ascii_graphic());
-    let display = bytes.iter().map(|&c| {
+    let trimmed = match bytes.iter().rposition(|&c| c != 0 && c != b' ') {
+        Some(last) => &bytes[..=last],
+        None => &bytes[..0],
+    };
+    let valid = trimmed.iter().all(|c| *c == b' ' || c.is_ascii_graphic());
+    let display = trimmed.iter().map(|&c| {
         if c.is_ascii_graphic() || c == b' ' {
             char::from(c)
         } else {
             '?'
         }
-    }).collect::<String>().trim().to_owned();
+    }).collect::<String>();
     (display, valid)
 }
 
@@ -154,7 +158,7 @@ mod tests {
         bytes[0x0c..0x10].copy_from_slice(&0x11223344u32.to_be_bytes());
         bytes[0x10..0x14].copy_from_slice(&0x12345678u32.to_be_bytes());
         bytes[0x14..0x18].copy_from_slice(&0x9abcdef0u32.to_be_bytes());
-        bytes[0x20..0x2b].copy_from_slice(b"TEST PROGRAM");
+        bytes[0x20..0x2c].copy_from_slice(b"TEST PROGRAM");
         bytes[0x3b..0x3f].copy_from_slice(b"NABE");
         bytes[0x3f] = 3;
         bytes
