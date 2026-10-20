@@ -10,6 +10,7 @@
 | Switch NSO | `NSO0` header | Full module build ID and Atmosphère short cheat build ID | No | No | No; header only |
 | Switch NACP | Explicit command (no magic) | Localized titles, publishers, display version and IDs | No | No | No; metadata parser only |
 | Switch NCA | Readable `NCA2`/`NCA3` at 0x200 | Format/length only | No | No | No |
+| 3DS CIA | Little-endian 0x2020-byte archive header heuristic (no fixed magic) | Header/type/version, content bitmap and aligned section sizes | `3ds cia-sections` lists cert/ticket/TMD/content/meta | No | Structural bounds only; not signature, hash, ticket or decrypted data validation |
 | 3DS standalone NCCH | `NCCH` at 0x100 | Program/partition IDs, product code, crypto flags, media-unit size | `3ds ncch-regions` lists bounded ExeFS/RomFS/etc. spans | No | Structural only, no RSA signature/content hash/decryption |
 | 3DS cartridge NCSD | `NCSD` at 0x100 | Media ID, declared size, media unit and type flags, partition count | `3ds partitions` shows up to 8 bounded NCCH spans | No | Explicit structural bounds only; no RSA signature/decryption or NCCH hash checks |
 | DS save wrappers | User-directed `nds save info`; DeSmuME footer, No$GBA header or original Action Replay DS `ARDS0001` wrapper | Known wrapper fields, compression flag, saved-size hints | No game-file listing | No | Bounds checks only; no save-content authenticity or chip identification |
