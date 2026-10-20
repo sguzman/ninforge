@@ -52,8 +52,15 @@ fn common_raw_capacity(len: u64) -> bool {
     // Familiar byte lengths used by several DS backup devices, NOT evidence
     // of the hardware chip actually used by any particular game.
     [
-        512, 8 * 1024, 32 * 1024, 64 * 1024, 128 * 1024,
-        256 * 1024, 512 * 1024, 1024 * 1024, 8 * 1024 * 1024,
+        512,
+        8 * 1024,
+        32 * 1024,
+        64 * 1024,
+        128 * 1024,
+        256 * 1024,
+        512 * 1024,
+        1024 * 1024,
+        8 * 1024 * 1024,
     ]
     .contains(&len)
 }
@@ -93,7 +100,9 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
             if version != 0 {
                 return Err(invalid("unsupported DeSmuME footer version"));
             }
-            if padded == 0 || padded > MAX_REASONABLE_DATA || padded > preceding_bytes
+            if padded == 0
+                || padded > MAX_REASONABLE_DATA
+                || padded > preceding_bytes
                 || written > padded
             {
                 return Err(invalid("DeSmuME save footer has inconsistent bounds"));
@@ -102,7 +111,11 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
             add(&mut report, "data_offset", 0);
             add(&mut report, "data_size_bytes", padded);
             add(&mut report, "actually_written_size_bytes", written);
-            add(&mut report, "trailer_before_footer_bytes", preceding_bytes - padded);
+            add(
+                &mut report,
+                "trailer_before_footer_bytes",
+                preceding_bytes - padded,
+            );
             add(&mut report, "footer_size_bytes", DSV_FOOTER);
             add(&mut report, "footer_version", version);
             add(&mut report, "save_type_reserved", saved_type);
@@ -137,21 +150,35 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
                 return Err(invalid("No$GBA save has unsupported data size"));
             }
             if compressed == 1 {
-                if secondary == 0 || secondary > MAX_REASONABLE_DATA
-                    || NO_GBA_HEADER.checked_add(primary_size).is_none_or(|end| end > len)
+                if secondary == 0
+                    || secondary > MAX_REASONABLE_DATA
+                    || NO_GBA_HEADER
+                        .checked_add(primary_size)
+                        .is_none_or(|end| end > len)
                 {
                     return Err(invalid("No$GBA packed data outside file bounds"));
                 }
-            } else if NO_GBA_HEADER.checked_add(primary_size).is_none_or(|end| end > len) {
+            } else if NO_GBA_HEADER
+                .checked_add(primary_size)
+                .is_none_or(|end| end > len)
+            {
                 return Err(invalid("No$GBA uncompressed data outside file bounds"));
             }
             report.kind = DsSaveKind::NoGba;
-            add(&mut report, "compression", if compressed == 0 { "none" } else { "packed" });
+            add(
+                &mut report,
+                "compression",
+                if compressed == 0 { "none" } else { "packed" },
+            );
             add(&mut report, "stored_payload_size_bytes", primary_size);
             if compressed == 1 {
                 add(&mut report, "claimed_unpacked_size_bytes", secondary);
             } else {
-                add(&mut report, "claimed_start_address", format!("0x{secondary:08X}"));
+                add(
+                    &mut report,
+                    "claimed_start_address",
+                    format!("0x{secondary:08X}"),
+                );
             }
             add(&mut report, "payload_offset", NO_GBA_HEADER);
             add(&mut report, "payload_not_decompressed", compressed != 0);
@@ -160,9 +187,17 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
         }
     }
 
-    add(&mut report, "common_raw_capacity_length", common_raw_capacity(len));
+    add(
+        &mut report,
+        "common_raw_capacity_length",
+        common_raw_capacity(len),
+    );
     add(&mut report, "format_signature_verified", false);
-    add(&mut report, "note", "raw save or unidentified bytes; game/chip not inferred");
+    add(
+        &mut report,
+        "note",
+        "raw save or unidentified bytes; game/chip not inferred",
+    );
     Ok(report)
 }
 
@@ -172,7 +207,10 @@ mod tests {
     use std::io::Cursor;
 
     fn field<'a>(report: &'a DsSaveReport, name: &str) -> Option<&'a str> {
-        report.metadata.iter().find(|(key, _)| key == name)
+        report
+            .metadata
+            .iter()
+            .find(|(key, _)| key == name)
             .map(|(_, value)| value.as_str())
     }
 
@@ -219,11 +257,11 @@ mod tests {
         assert!(inspect_ds_save(&mut Cursor::new(&short)).is_err());
         let mut bad_version = dsv(512, 5, 0);
         let version = bad_version.len() - 20;
-        bad_version[version..version+4].copy_from_slice(&1u32.to_le_bytes());
+        bad_version[version..version + 4].copy_from_slice(&1u32.to_le_bytes());
         assert!(inspect_ds_save(&mut Cursor::new(bad_version)).is_err());
         let mut bad_size = dsv(512, 5, 0);
         let padded = bad_size.len() - 36;
-        bad_size[padded..padded+4].copy_from_slice(&999999u32.to_le_bytes());
+        bad_size[padded..padded + 4].copy_from_slice(&999999u32.to_le_bytes());
         assert!(inspect_ds_save(&mut Cursor::new(bad_size)).is_err());
     }
 

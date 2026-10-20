@@ -63,11 +63,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
             }
         }
-        [platform, save, action, file] if platform == "nds" && save == "save" && action == "info" => {
+        [platform, save, action, file]
+            if platform == "nds" && save == "save" && action == "info" =>
+        {
             print_nds_save(&inspect_ds_save(&mut File::open(file)?)?, false);
         }
         [platform, save, action, file, flag]
-            if platform == "nds" && save == "save" && action == "info" && flag == "--json" => {
+            if platform == "nds" && save == "save" && action == "info" && flag == "--json" =>
+        {
             print_nds_save(&inspect_ds_save(&mut File::open(file)?)?, true);
         }
         [cmd, sub, root] if cmd == "saves" && sub == "scan" => save_scan(Path::new(root), false)?,
@@ -325,10 +328,13 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
     }
     let mut output = format!(
         r#"{{"format":{},"size_bytes":{},"metadata":{{"#,
-        json_string(report.kind.label()), report.size_bytes
+        json_string(report.kind.label()),
+        report.size_bytes
     );
     for (index, (name, value)) in report.metadata.iter().enumerate() {
-        if index > 0 { output.push(','); }
+        if index > 0 {
+            output.push(',');
+        }
         write!(&mut output, "{}:{}", json_string(name), json_string(value))
             .expect("formatting JSON string");
     }

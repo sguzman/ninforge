@@ -8,13 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static SERIAL: AtomicUsize = AtomicUsize::new(0);
 const COOKIE: &[u8; 16] = b"|-DESMUME SAVE-|";
 
-struct Fixture { dir: PathBuf, file: PathBuf }
+struct Fixture {
+    dir: PathBuf,
+    file: PathBuf,
+}
 impl Fixture {
     fn new(data: &[u8], name: &str) -> Self {
-        let tick = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let tick = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!(
             "ninforge-nds-save-cli-{}-{tick}-{}",
-            std::process::id(), SERIAL.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&dir).unwrap();
         let file = dir.join(name);
@@ -24,12 +31,16 @@ impl Fixture {
     fn run(&self, json: bool) -> Output {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cmd.args(["nds", "save", "info"]).arg(&self.file);
-        if json { cmd.arg("--json"); }
+        if json {
+            cmd.arg("--json");
+        }
         cmd.output().unwrap()
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.dir); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 fn dsv() -> Vec<u8> {
     let mut data = vec![0xab; 8192];
@@ -57,7 +68,11 @@ fn no_gba(compressed: bool) -> Vec<u8> {
 fn dsv_footer_recognized_by_content_not_extension() {
     let file = Fixture::new(&dsv(), "unusual.dat");
     let output = file.run(true);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains(r#""format":"desmume_dsv""#));
     assert!(text.contains(r#""data_size_bytes":"8192""#));
@@ -70,7 +85,11 @@ fn nogba_header_recognized_both_compression_modes() {
     for compressed in [false, true] {
         let file = Fixture::new(&no_gba(compressed), "backup.bin");
         let output = file.run(true);
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let text = String::from_utf8(output.stdout).unwrap();
         assert!(text.contains(r#""format":"no_gba_sram""#));
         assert!(text.contains(if compressed {
@@ -92,7 +111,9 @@ fn anonymous_raw_file_is_not_attributed_to_ds_hardware() {
     assert!(text.contains(r#""common_raw_capacity_length":"true""#));
     let verbose = file.run(false);
     assert!(verbose.status.success());
-    assert!(String::from_utf8(verbose.stdout).unwrap().contains("raw_or_unidentified"));
+    assert!(String::from_utf8(verbose.stdout)
+        .unwrap()
+        .contains("raw_or_unidentified"));
 }
 
 #[test]
