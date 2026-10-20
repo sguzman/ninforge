@@ -112,6 +112,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Format::WiiWbfs => {
                     println!("OK: WBFS superblock and disc-slot table are structurally readable (disc block maps and game data not verified)");
                 }
+                Format::GameCube => {
+                    println!("OK: GameCube FST hierarchy, file byte ranges and disc header bounds checked (no executable or content hash authentication)");
+                }
                 _ => {
                     require_sections(&report)?;
                     println!(
@@ -328,8 +331,8 @@ fn verify_ds_checks(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
 
 fn require_sections(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
     match report.format {
-        Format::SwitchNsp | Format::SwitchHfs0 | Format::SwitchXci | Format::NintendoDs => Ok(()),
-        _ => Err("this operation supports Switch NSP/HFS0/XCI and Nintendo DS files".into()),
+        Format::SwitchNsp | Format::SwitchHfs0 | Format::SwitchXci | Format::NintendoDs | Format::GameCube => Ok(()),
+        _ => Err("this operation supports Switch NSP/HFS0/XCI, Nintendo DS and GameCube files".into()),
     }
 }
 
@@ -412,7 +415,7 @@ Ninforge {} - Nintendo file inspection (read-only by default)
 Usage:
   ninforge info <file> [--json]            Detect format and inspect header
   ninforge inspect <file> [--json]         Alias for info
-  ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
+  ninforge list <file> [--json]            List Switch, DS or GameCube files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge snes header <file> [--json]      Report LoROM/HiROM candidate headers
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims

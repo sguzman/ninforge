@@ -9,6 +9,7 @@ pub mod cia_tmd;
 pub mod cnmt;
 pub mod gb;
 pub mod gba;
+pub mod gamecube;
 mod hfs0;
 pub mod metadata_dir;
 pub mod n64;
@@ -298,11 +299,18 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("partition_offsets_checked", true);
         report.add("partition_contents_decrypted", false);
     } else if head.len() >= 0x20 && &head[0x1c..0x20] == b"\xc2\x33\x9f\x3d" && disc_id_ok(&head) {
+        let disc = gamecube::inspect_gamecube(input, bytes)?;
         report.format = Format::GameCube;
         report.add("game_id", ascii_field(&head[0..6]));
-        if head.len() >= 0x60 {
-            report.add("title", ascii_field(&head[0x20..0x60]));
-        }
+        report.add("title", ascii_field(&head[0x20..0x60]));
+        report.add("dol_offset_bytes", disc.dol_offset_bytes);
+        report.add("fst_offset_bytes", disc.fst_offset_bytes);
+        report.add("fst_size_bytes", disc.fst_size_bytes);
+        report.add("fst_max_size_bytes", disc.fst_max_size_bytes);
+        report.add("directory_count", disc.directory_count);
+        report.add("file_count", disc.entries.len());
+        report.add("content_hashes_verified", false);
+        report.entries = disc.entries;
     } else if head.len() >= 0x140 && &head[0x100..0x104] == b"HEAD" {
         report.format = Format::SwitchXci;
         let (root, entries) = hfs0::parse_xci(input, &head, bytes)?;
