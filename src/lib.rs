@@ -10,6 +10,7 @@ pub mod nacp;
 pub mod nca;
 mod nds;
 mod nds_banner;
+mod nds_crc;
 pub mod package;
 pub mod saves;
 pub mod title_inventory;
@@ -188,6 +189,9 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("maker_code", ascii_field(&head[16..18]));
         report.add("unit_code", head[18]);
         report.add("rom_version", head[0x1e]);
+        // CRC mismatches are observable even in damaged/header-patched ROMs.
+        // The explicit "verify" CLI operation decides whether to reject them.
+        report.metadata.extend(nds_crc::inspect_header(&head)?.metadata());
         report.entries = nds::sections(&head, bytes)?;
         report.add("section_count", report.entries.len());
         let files = nds::filesystem(input, &head, bytes)?;
