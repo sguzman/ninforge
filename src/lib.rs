@@ -11,6 +11,7 @@ pub mod metadata_dir;
 pub mod nacp;
 pub mod nca;
 pub mod ncsd;
+pub mod ncch;
 mod nds;
 mod nds_banner;
 mod nds_crc;
@@ -38,6 +39,7 @@ pub enum Format {
     SwitchNca,
     SwitchCnmt,
     Nintendo3dsCartridge,
+    Nintendo3dsNcch,
     NintendoDs,
     Wii,
     WiiWbfs,
@@ -61,6 +63,7 @@ impl Format {
             Self::SwitchNca => "Switch NCA (decrypted header)",
             Self::SwitchCnmt => "Switch CNMT metadata",
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
+            Self::Nintendo3dsNcch => "Nintendo 3DS NCCH",
             Self::NintendoDs => "Nintendo DS",
             Self::Wii => "Wii disc",
             Self::WiiWbfs => "Wii WBFS",
@@ -83,7 +86,7 @@ impl Format {
             | Self::SwitchXci
             | Self::SwitchNca
             | Self::SwitchCnmt => "switch",
-            Self::Nintendo3dsCartridge => "3ds",
+            Self::Nintendo3dsCartridge | Self::Nintendo3dsNcch => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii | Self::WiiWbfs => "wii",
             Self::GameCube => "gamecube",
@@ -274,6 +277,21 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("partition_count", ncsd.partitions.len());
         report.add("signature_verified", false);
         report.add("encrypted_partition_contents_verified", false);
+    } else if head.len() >= 0x104 && &head[0x100..0x104] == b"NCCH" {
+        let info = ncch::inspect_ncch(&head, bytes)?;
+        report.format = Format::Nintendo3dsNcch;
+        report.add("program_id", format!("0x{:016X}", info.program_id));
+        report.add("partition_id", format!("0x{:016X}", info.partition_id));
+        report.add("product_code", info.product_code);
+        report.add("media_unit_bytes", info.media_unit_bytes);
+        report.add("declared_content_size_bytes", info.declared_content_bytes);
+        report.add("region_count", info.regions.len());
+        report.add("crypto_method", info.crypto_method);
+        report.add("content_platform", info.content_platform);
+        report.add("content_form", info.content_form);
+        report.add("content_type", info.content_type);
+        report.add("no_crypto_flag", info.no_crypto_flag);
+        report.add("cryptographic_integrity_verified", false);
     } else if head.len() >= 0x204
         && (&head[0x200..0x204] == b"NCA2" || &head[0x200..0x204] == b"NCA3")
     {
