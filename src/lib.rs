@@ -13,6 +13,7 @@ pub mod nacp;
 pub mod nca;
 pub mod ncch;
 pub mod ncsd;
+pub mod ncsd_ncch;
 mod nds;
 mod nds_banner;
 mod nds_crc;
