@@ -201,6 +201,159 @@ pub fn inspect_wbfs<R: Read + Seek>(input: &mut R, file_bytes: u64) -> io::Resul
     })
 }
 
+/// Original libwbfs uses a dual-layer Wii disc ceiling of 286864 Wii
+/// sectors (0x8000 bytes each) for the per-disc logical block table.
+const MAX_WII_SECTORS_PER_DISC: u64 = 143_432 * 2;
+const MAX_CHECKED_WBFS_SLOTS: usize = 2048;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WbfsDiscMap {
+    pub slot: usize,
+    pub disc_id: String,
+    pub info_offset_bytes: u64,
+    pub mapped_blocks: usize,
+    pub logical_blocks: usize,
+    pub last_physical_block: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WbfsMapReport {
+    pub host_sector_bytes: u64,
+    pub wbfs_sector_bytes: u64,
+    pub declared_capacity_bytes: u64,
+    pub disc_record_size_bytes: u64,
+    pub logical_blocks_per_disc: usize,
+    pub physical_block_count: u64,
+    pub checked_slots: usize,
+    pub mapped_blocks_total: usize,
+    pub discs: Vec<WbfsDiscMap>,
+    /// All mapped physical blocks were inside the supplied file.
+    /// Neither SHA-1 data hashes nor disc filesystem contents were examined.
+    pub block_references_within_file: bool,
+}
+
+/// Strict, opt-in WBFS structural verification of occupied slot metadata and
+/// their big-endian wlba maps. This reads at most the 64 KiB host header plus
+/// 2048 bounded disc records; it never reads mapped game-data blocks.
+///
+/// WBFS slot N metadata is at host_sector + N * disc_info_sz; the
+/// wlba table begins at offset 0x100 within each disc record. Its length is
+/// based on the fixed maximum dual-layer Wii disc size, NOT this game's size.
+/// Nonzero wlba values refer to one-based physical WBFS sector indices.
+pub fn validate_wbfs_maps<R: Read + Seek>(
+    input: &mut R,
+    file_bytes: u64,
+) -> io::Result<WbfsMapReport> {
+    let header = inspect_wbfs(input, file_bytes)?;
+    let host = header.host_sector_bytes;
+    let wbfs = header.wbfs_sector_bytes;
+    let physical_blocks = header.declared_capacity_bytes / wbfs;
+    if physical_blocks < 2 || physical_blocks > u16::MAX as u64 {
+        return Err(bad("WBFS physical block count cannot be represented by wlba indices"));
+    }
+
+    let shift = wbfs.trailing_zeros() - 15;
+    let logical_blocks = (MAX_WII_SECTORS_PER_DISC >> shift) as usize;
+    if logical_blocks == 0 {
+        return Err(bad("WBFS disc block table has no addressable entries"));
+    }
+    let raw_info_size = 0x100u64 + logical_blocks as u64 * 2;
+    let disc_record_size = raw_info_size
+        .checked_add(host - 1)
+        .ok_or_else(|| bad("WBFS disc record alignment overflow"))?
+        / host * host;
+
+    // The original layout keeps a free-block bitmap at the end of WBFS
+    // sector zero. Disc metadata may not overlap this reserved area.
+    let bitmap_bytes = physical_blocks / 8;
+    let bitmap_start = (wbfs - bitmap_bytes) / host * host;
+    if bitmap_start <= host || disc_record_size > bitmap_start - host {
+        return Err(bad("WBFS metadata leaves no space for disc records"));
+    }
+    let possible_records = (bitmap_start - host) / disc_record_size;
+    let valid_slots = possible_records.min((host - 12) as u64) as usize;
+
+    let mut first_sector = vec![0u8; host as usize];
+    read_at(input, 0, &mut first_sector)?;
+    let slot_bytes = &first_sector[12..];
+    if slot_bytes[valid_slots..].iter().any(|b| *b != 0) {
+        return Err(bad("WBFS occupied slot exceeds disc metadata capacity"));
+    }
+    let occupied: Vec<usize> = slot_bytes[..valid_slots]
+        .iter().enumerate()
+        .filter_map(|(index, flag)| match *flag {
+            0 => None,
+            _ => Some(index),
+        })
+        .collect();
+    if occupied.len() > MAX_CHECKED_WBFS_SLOTS {
+        return Err(bad("WBFS occupied disc slots exceed validation safety cap"));
+    }
+    if occupied.iter().any(|&slot| slot_bytes[slot] != 1) {
+        return Err(bad("WBFS disc slot has invalid occupancy flag"));
+    }
+
+    let mut discs = Vec::with_capacity(occupied.len());
+    let mut assigned = HashSet::new();
+    let mut mapped_blocks_total = 0usize;
+    for &slot in &occupied {
+        let start = host + slot as u64 * disc_record_size;
+        let end = start + disc_record_size;
+        if end > bitmap_start || end > file_bytes {
+            return Err(bad("WBFS occupied disc record truncated or overlaps bitmap"));
+        }
+        let mut record = vec![0u8; raw_info_size as usize];
+        read_at(input, start, &mut record)?;
+        if record[0x18..0x1c] != [0x5d, 0x1c, 0x9e, 0xa3] {
+            return Err(bad("WBFS occupied disc record is missing Wii disc magic"));
+        }
+        if !record[..6].iter().all(u8::is_ascii_alphanumeric) {
+            return Err(bad("WBFS occupied disc record has invalid disc identifier"));
+        }
+        let disc_id = std::str::from_utf8(&record[..6])
+            .map_err(|_| bad("WBFS occupied disc identifier not UTF-8"))?
+            .to_owned();
+        let mut mapped = 0usize;
+        let mut last = None;
+        for block in record[0x100..].chunks_exact(2) {
+            let address = u16::from_be_bytes([block[0], block[1]]);
+            if address == 0 {
+                continue;
+            }
+            let physical = u64::from(address);
+            if physical >= physical_blocks {
+                return Err(bad("WBFS block index exceeds declared volume capacity"));
+            }
+            let block_end = (physical + 1) * wbfs;
+            if block_end > file_bytes {
+                return Err(bad("WBFS mapped block extends beyond supplied file"));
+            }
+            if !assigned.insert(address) {
+                return Err(bad("WBFS duplicate physical block mapping"));
+            }
+            mapped += 1;
+            mapped_blocks_total += 1;
+            last = Some(last.map_or(address, |prev: u16| prev.max(address)));
+        }
+        discs.push(WbfsDiscMap {
+            slot, disc_id, info_offset_bytes: start, mapped_blocks: mapped,
+            logical_blocks, last_physical_block: last,
+        });
+    }
+    Ok(WbfsMapReport {
+        host_sector_bytes: host,
+        wbfs_sector_bytes: wbfs,
+        declared_capacity_bytes: header.declared_capacity_bytes,
+        disc_record_size_bytes: disc_record_size,
+        logical_blocks_per_disc: logical_blocks,
+        physical_block_count: physical_blocks,
+        checked_slots: occupied.len(),
+        mapped_blocks_total,
+        discs,
+        block_references_within_file: true,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
