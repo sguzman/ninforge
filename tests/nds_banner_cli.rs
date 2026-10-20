@@ -62,7 +62,11 @@ fn banner_title_and_crc_are_reported_and_listed() {
     let json = String::from_utf8(info.stdout).unwrap();
     assert!(json.contains(r#""banner_title_english":"Example DS""#));
     assert!(json.contains(r#""banner_crc_all_valid":"true""#));
-    assert!(json.contains(r#""name":"banner.bin""#));
+    let listing_json = Command::new(env!("CARGO_BIN_EXE_ninforge"))
+        .arg("list").arg(&fixture.rom).arg("--json").output().unwrap();
+    assert!(listing_json.status.success());
+    assert!(String::from_utf8(listing_json.stdout).unwrap()
+        .contains(r#""name":"banner.bin""#));
     let list = fixture.cmd("list");
     assert!(list.status.success());
     assert!(String::from_utf8(list.stdout).unwrap().contains("banner.bin"));
