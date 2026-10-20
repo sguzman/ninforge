@@ -88,7 +88,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_wii_partitions(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "wii" && action == "partitions" && flag == "--json" => {
+            if platform == "wii" && action == "partitions" && flag == "--json" =>
+        {
             run_wii_partitions(file, true)?;
         }
         [platform, save, action, file]
@@ -391,8 +392,11 @@ fn print_wii_partitions(disc: &WiiDiscReport, json: bool) {
         for part in &disc.partitions {
             println!(
                 "group={} index={} offset={} type={} ({})",
-                part.group, part.index, part.offset_bytes,
-                part.partition_type, part.kind()
+                part.group,
+                part.index,
+                part.offset_bytes,
+                part.partition_type,
+                part.kind()
             );
         }
         println!("Encrypted partitions and their lengths are not verified.");
@@ -403,27 +407,39 @@ fn print_wii_partitions(disc: &WiiDiscReport, json: bool) {
         disc.partitions.len()
     );
     for group in 0..4 {
-        if group > 0 { output.push(','); }
-        let pointer = disc.group_table_offsets[group].map_or_else(
-            || "null".to_string(), |offset| offset.to_string()
-        );
-        write!(&mut output, r#"{{"index":{},"count":{},"table_offset_bytes":{}}}"#,
+        if group > 0 {
+            output.push(',');
+        }
+        let pointer = disc.group_table_offsets[group]
+            .map_or_else(|| "null".to_string(), |offset| offset.to_string());
+        write!(
+            &mut output,
+            r#"{{"index":{},"count":{},"table_offset_bytes":{}}}"#,
             group, disc.group_counts[group], pointer
-        ).expect("String write");
+        )
+        .expect("String write");
     }
     output.push_str(r#"],"region_code":"#);
-    output.push_str(&disc.region_code.map_or_else(
-        || "null".to_owned(), |code| code.to_string()
-    ));
+    output.push_str(
+        &disc
+            .region_code
+            .map_or_else(|| "null".to_owned(), |code| code.to_string()),
+    );
     output.push_str(r#","partitions":["#);
     for (index, part) in disc.partitions.iter().enumerate() {
-        if index > 0 { output.push(','); }
+        if index > 0 {
+            output.push(',');
+        }
         write!(
             &mut output,
             r#"{{"group":{},"index":{},"offset_bytes":{},"type":{},"type_name":{}}}"#,
-            part.group, part.index, part.offset_bytes,
-            part.partition_type, json_string(part.kind())
-        ).expect("String write");
+            part.group,
+            part.index,
+            part.offset_bytes,
+            part.partition_type,
+            json_string(part.kind())
+        )
+        .expect("String write");
     }
     output.push_str(r#"],"encrypted_content_verified":false}"#);
     println!("{output}");

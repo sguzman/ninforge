@@ -79,13 +79,16 @@ pub fn inspect_wii_disc<R: Read + Seek>(
         if count > MAX_GROUP_PARTITIONS {
             return Err(bad("Wii partition group exceeds safety cap"));
         }
-        total = total.checked_add(count as usize)
+        total = total
+            .checked_add(count as usize)
             .filter(|value| *value <= MAX_PARTITIONS)
             .ok_or_else(|| bad("Wii partition count exceeds safety cap"))?;
         let table_bytes = u64::from(count) * 8;
         if pointer < MIN_PARTITION_OFFSET
             || pointer % 4 != 0
-            || pointer.checked_add(table_bytes).is_none_or(|end| end > file_bytes)
+            || pointer
+                .checked_add(table_bytes)
+                .is_none_or(|end| end > file_bytes)
         {
             return Err(bad("Wii partition table pointer outside disc"));
         }
@@ -95,7 +98,9 @@ pub fn inspect_wii_disc<R: Read + Seek>(
     let mut partitions = Vec::with_capacity(total);
     let mut seen_offsets = HashSet::new();
     for group in 0..GROUP_COUNT {
-        let Some(base) = offsets[group] else { continue; };
+        let Some(base) = offsets[group] else {
+            continue;
+        };
         let count = counts[group] as usize;
         let mut table = vec![0u8; count * 8];
         read_at(input, base, &mut table)?;
@@ -105,7 +110,9 @@ pub fn inspect_wii_disc<R: Read + Seek>(
             // A partition contains a 0x2c0-byte ticket/metadata header.
             // Do not parse encrypted data, infer its length, or create entries.
             if position < MIN_PARTITION_OFFSET
-                || position.checked_add(0x2c0).is_none_or(|end| end > file_bytes)
+                || position
+                    .checked_add(0x2c0)
+                    .is_none_or(|end| end > file_bytes)
             {
                 return Err(bad("Wii partition header outside disc"));
             }
@@ -128,8 +135,10 @@ pub fn inspect_wii_disc<R: Read + Seek>(
         None
     };
     Ok(WiiDiscReport {
-        partitions, group_counts: counts,
-        group_table_offsets: offsets, region_code,
+        partitions,
+        group_counts: counts,
+        group_table_offsets: offsets,
+        region_code,
     })
 }
 
@@ -147,10 +156,7 @@ pub struct WbfsHeader {
 /// Parse a WBFS superblock and its first-sector disc-slot array.
 /// A standalone/sparse WBFS image may be smaller than the logical volume.
 /// Slot presence does not validate the disc block map or embedded game data.
-pub fn inspect_wbfs<R: Read + Seek>(
-    input: &mut R,
-    file_bytes: u64,
-) -> io::Result<WbfsHeader> {
+pub fn inspect_wbfs<R: Read + Seek>(input: &mut R, file_bytes: u64) -> io::Result<WbfsHeader> {
     if file_bytes < 12 {
         return Err(bad("WBFS superblock truncated"));
     }
@@ -162,8 +168,10 @@ pub fn inspect_wbfs<R: Read + Seek>(
     let sectors = be32(&preface[4..8]);
     let host_shift = preface[8];
     let wbfs_shift = preface[9];
-    if sectors == 0 || !(9..=16).contains(&host_shift)
-        || !(15..=25).contains(&wbfs_shift) || wbfs_shift < host_shift
+    if sectors == 0
+        || !(9..=16).contains(&host_shift)
+        || !(15..=25).contains(&wbfs_shift)
+        || wbfs_shift < host_shift
     {
         return Err(bad("WBFS sector parameters unsupported or invalid"));
     }

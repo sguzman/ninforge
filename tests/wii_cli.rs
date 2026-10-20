@@ -14,10 +14,14 @@ struct Fixture {
 }
 impl Fixture {
     fn new(bytes: &[u8]) -> Self {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let root = std::env::temp_dir().join(format!(
             "ninforge-wii-cli-{}-{now}-{}",
-            std::process::id(), SERIAL.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
         let file = root.join("fictional.bin");
@@ -31,12 +35,16 @@ impl Fixture {
     fn partitions(&self, json: bool) -> Output {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cmd.args(["wii", "partitions"]).arg(&self.file);
-        if json { cmd.arg("--json"); }
+        if json {
+            cmd.arg("--json");
+        }
         cmd.output().unwrap()
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 
 fn iso() -> Vec<u8> {
@@ -69,15 +77,27 @@ fn iso_info_and_partition_index_have_correct_offsets() {
     let data = iso();
     let file = Fixture::new(&data);
     let info = Command::new(env!("CARGO_BIN_EXE_ninforge"))
-        .arg("info").arg(&file.file).arg("--json").output().unwrap();
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+        .arg("info")
+        .arg(&file.file)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let json = String::from_utf8(info.stdout).unwrap();
     assert!(json.contains(r#""format":"Wii disc""#));
     assert!(json.contains(r#""partition_count":"2""#));
     assert!(json.contains(r#""partition_offsets_checked":"true""#));
     assert!(json.contains(r#""partition_contents_decrypted":"false""#));
     let listing = file.partitions(true);
-    assert!(listing.status.success(), "{}", String::from_utf8_lossy(&listing.stderr));
+    assert!(
+        listing.status.success(),
+        "{}",
+        String::from_utf8_lossy(&listing.stderr)
+    );
     let json = String::from_utf8(listing.stdout).unwrap();
     assert!(json.contains(r#""partition_count":2"#));
     assert!(json.contains(r#""offset_bytes":327680,"type":1,"type_name":"update""#));
@@ -85,7 +105,9 @@ fn iso_info_and_partition_index_have_correct_offsets() {
     assert!(json.contains(r#""encrypted_content_verified":false"#));
     let plain = file.partitions(false);
     assert!(plain.status.success());
-    assert!(String::from_utf8(plain.stdout).unwrap().contains("group=0 index=1"));
+    assert!(String::from_utf8(plain.stdout)
+        .unwrap()
+        .contains("group=0 index=1"));
     assert_eq!(fs::read(&file.file).unwrap(), data);
 }
 
@@ -93,8 +115,13 @@ fn iso_info_and_partition_index_have_correct_offsets() {
 fn iso_verify_confirms_structural_bounds_only() {
     let file = Fixture::new(&iso());
     let out = file.run(&["verify"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(String::from_utf8(out.stdout).unwrap()
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8(out.stdout)
+        .unwrap()
         .contains("encrypted partition data not verified"));
 }
 
@@ -115,8 +142,16 @@ fn malformed_partition_addresses_refuse_info_and_verify() {
 fn wbfs_superblock_recognition_keeps_blockmap_unverified() {
     let file = Fixture::new(&wbfs());
     let info = Command::new(env!("CARGO_BIN_EXE_ninforge"))
-        .arg("info").arg(&file.file).arg("--json").output().unwrap();
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+        .arg("info")
+        .arg(&file.file)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let json = String::from_utf8(info.stdout).unwrap();
     assert!(json.contains(r#""format":"Wii WBFS""#));
     assert!(json.contains(r#""occupied_disc_slots":"1""#));
@@ -124,12 +159,12 @@ fn wbfs_superblock_recognition_keeps_blockmap_unverified() {
     assert!(json.contains(r#""block_map_verified":"false""#));
     let verify = file.run(&["verify"]);
     assert!(verify.status.success());
-    assert!(String::from_utf8(verify.stdout).unwrap()
+    assert!(String::from_utf8(verify.stdout)
+        .unwrap()
         .contains("disc block maps and game data not verified"));
     let listing = file.partitions(true);
     assert!(!listing.status.success());
-    assert!(String::from_utf8_lossy(&listing.stderr)
-        .contains("not a WBFS container"));
+    assert!(String::from_utf8_lossy(&listing.stderr).contains("not a WBFS container"));
 }
 
 #[test]
