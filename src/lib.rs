@@ -12,6 +12,7 @@ pub mod gba;
 mod hfs0;
 pub mod metadata_dir;
 pub mod nacp;
+pub mod n64;
 pub mod nca;
 pub mod ncch;
 pub mod ncsd;
@@ -273,18 +274,12 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
             report.metadata.extend(banner.metadata);
             report.entries.push(banner.entry);
         }
-    } else if head.len() >= 4
-        && (&head[0..4] == b"\x80\x37\x12\x40"
-            || &head[0..4] == b"\x37\x80\x40\x12"
-            || &head[0..4] == b"\x40\x12\x37\x80")
-    {
+    } else if n64::ByteOrder::from_magic(&head).is_some() {
+        // Decode only the normalized 64-byte header. The stored boot CRC
+        // fields cannot be verified without additional CIC-specific work.
+        let normalized = n64::inspect_n64(&head)?;
         report.format = Format::Nintendo64;
-        let order = match &head[0..4] {
-            b"\x80\x37\x12\x40" => "big-endian (.z64)",
-            b"\x37\x80\x40\x12" => "byte-swapped (.v64)",
-            _ => "little-endian (.n64)",
-        };
-        report.add("byte_order", order);
+        report.metadata.extend(normalized.metadata());
     } else if head.len() >= 0x20 && &head[0x18..0x1c] == b"\x5d\x1c\x9e\xa3" && disc_id_ok(&head) {
         report.format = Format::Wii;
         report.add("game_id", ascii_field(&head[0..6]));
