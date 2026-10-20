@@ -13,10 +13,14 @@ struct Temp {
 }
 impl Temp {
     fn new(bytes: &[u8]) -> Self {
-        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let directory = std::env::temp_dir().join(format!(
             "ninforge-nds-crc-{}-{ns}-{}",
-            std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed),
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         fs::create_dir(&directory).unwrap();
         let path = directory.join("fictional.nds");
@@ -26,7 +30,9 @@ impl Temp {
     fn run(&self, command: &str, json: bool) -> Output {
         let mut cli = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cli.arg(command).arg(&self.path);
-        if json { cli.arg("--json"); }
+        if json {
+            cli.arg("--json");
+        }
         cli.output().unwrap()
     }
 }
@@ -41,7 +47,11 @@ fn crc16(bytes: &[u8]) -> u16 {
     for &byte in bytes {
         crc ^= u16::from(byte);
         for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xa001 } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xa001
+            } else {
+                crc >> 1
+            };
         }
     }
     crc
@@ -72,14 +82,24 @@ fn valid_synthetic_header_reports_both_crc_values_and_verifies() {
     assert_eq!(crc16(&data[0xc0..0x15c]), 0xcf56);
     let t = Temp::new(&data);
     let info = t.run("info", true);
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let json = String::from_utf8(info.stdout).unwrap();
     assert!(json.contains(r#""nds_logo_crc_valid":"true""#));
     assert!(json.contains(r#""nds_header_crc_valid":"true""#));
     assert!(json.contains(r#""nds_logo_crc_calculated":"0xCF56""#));
     let verify = t.run("verify", false);
-    assert!(verify.status.success(), "{}", String::from_utf8_lossy(&verify.stderr));
-    assert!(String::from_utf8(verify.stdout).unwrap().contains("CRC-16 checks are valid"));
+    assert!(
+        verify.status.success(),
+        "{}",
+        String::from_utf8_lossy(&verify.stderr)
+    );
+    assert!(String::from_utf8(verify.stdout)
+        .unwrap()
+        .contains("CRC-16 checks are valid"));
 }
 
 #[test]

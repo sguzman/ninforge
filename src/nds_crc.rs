@@ -40,18 +40,25 @@ impl HeaderChecks {
     pub fn metadata(self) -> Vec<(String, String)> {
         [
             ("nds_logo_crc_stored", format!("0x{:04X}", self.logo_stored)),
-            ("nds_logo_crc_calculated", format!("0x{:04X}", self.logo_calculated)),
+            (
+                "nds_logo_crc_calculated",
+                format!("0x{:04X}", self.logo_calculated),
+            ),
             ("nds_logo_crc_valid", self.logo_valid().to_string()),
-            ("nds_header_crc_stored", format!("0x{:04X}", self.header_stored)),
-            ("nds_header_crc_calculated", format!("0x{:04X}", self.header_calculated)),
+            (
+                "nds_header_crc_stored",
+                format!("0x{:04X}", self.header_stored),
+            ),
+            (
+                "nds_header_crc_calculated",
+                format!("0x{:04X}", self.header_calculated),
+            ),
             ("nds_header_crc_valid", self.header_valid().to_string()),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v))
         .collect()
     }
-
-
 }
 
 /// Logo bytes are at [0xC0, 0x15C); stored logo CRC at [0x15C, 0x15E).
@@ -99,9 +106,9 @@ mod tests {
         assert_eq!(checks.logo_stored, 0xcf56);
         assert!(checks.logo_valid());
         assert!(checks.header_valid());
-        assert!(checks.metadata().contains(&(
-            "nds_header_crc_valid".into(), "true".into()
-        )));
+        assert!(checks
+            .metadata()
+            .contains(&("nds_header_crc_valid".into(), "true".into())));
     }
 
     #[test]
@@ -126,7 +133,10 @@ mod tests {
 
     #[test]
     fn offsets_are_bounded_and_truncated_data_is_rejected() {
-        assert_eq!(inspect_header(&fixture()[..0x15f]).unwrap_err().kind(), ErrorKind::InvalidData);
+        assert_eq!(
+            inspect_header(&fixture()[..0x15f]).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
         assert!(inspect_header(&fixture()[..0x160]).is_ok());
     }
 }

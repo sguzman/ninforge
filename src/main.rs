@@ -159,13 +159,19 @@ fn verify_ds_checks(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
         ("nds_logo_crc_valid", "logo CRC-16"),
         ("nds_header_crc_valid", "header CRC-16"),
     ] {
-        if !report.metadata.iter().any(|(key, value)| key == field && value == "true") {
+        if !report
+            .metadata
+            .iter()
+            .any(|(key, value)| key == field && value == "true")
+        {
             return Err(format!("Nintendo DS {label} mismatch or unavailable").into());
         }
     }
-    if report.metadata.iter().any(|(key, value)| {
-        key == "banner_crc_all_valid" && value == "false"
-    }) {
+    if report
+        .metadata
+        .iter()
+        .any(|(key, value)| key == "banner_crc_all_valid" && value == "false")
+    {
         return Err("Nintendo DS banner CRC-16 mismatch".into());
     }
     Ok(())

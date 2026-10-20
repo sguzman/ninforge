@@ -191,7 +191,9 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("rom_version", head[0x1e]);
         // CRC mismatches are observable even in damaged/header-patched ROMs.
         // The explicit "verify" CLI operation decides whether to reject them.
-        report.metadata.extend(nds_crc::inspect_header(&head)?.metadata());
+        report
+            .metadata
+            .extend(nds_crc::inspect_header(&head)?.metadata());
         report.entries = nds::sections(&head, bytes)?;
         report.add("section_count", report.entries.len());
         let files = nds::filesystem(input, &head, bytes)?;
