@@ -4,6 +4,7 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
+use ninforge::ncsd::{inspect_ncsd, NcsdReport};
 use ninforge::nds_save::{inspect_ds_save, DsSaveReport};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
@@ -68,6 +69,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ninforge::gba::verify_gba_header(&mut File::open(file)?)?;
                     println!("OK: GBA fixed header, complement checksum and weak logo sum match (header-only; no full-ROM checksum, signature or logo byte authentication)");
                 }
+                Format::Nintendo3dsCartridge => {
+                    println!("OK: 3DS NCSD partition byte ranges are bounded (NCSD signature and encrypted NCCH contents NOT verified)");
+                }
                 Format::NintendoDs => {
                     require_sections(&report)?;
                     verify_ds_checks(&report)?;
@@ -90,6 +94,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "3ds" && action == "partitions" => {
+            run_ncsd_partitions(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "3ds" && action == "partitions" && flag == "--json" => {
+            run_ncsd_partitions(file, true)?;
         }
         [platform, action, file] if platform == "wii" && action == "partition-check" => {
             run_wii_partition_check(file, false)?;
@@ -328,6 +339,7 @@ Usage:
   ninforge inspect <file> [--json]         Alias for info
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
+  ninforge 3ds partitions <ncsd> [--json]  Inspect NCSD media-unit partition table
   ninforge wii partitions <iso> [--json]  Index Wii ISO partition table (not decrypt)
   ninforge wii partition-check <iso> [--json]  Check Wii partition metadata extents
   ninforge wii wbfs-check <file> [--json]  Validate WBFS disc records and block maps
@@ -456,6 +468,58 @@ fn print_wii_partition_checks(partitions: &[WiiPartitionHeader], json: bool) {
             part.partition_type, part.tmd_offset_bytes, part.tmd_size_bytes,
             cert, part.cert_size_bytes, h3,
             part.data_offset_bytes, part.data_size_bytes
+        ).expect("JSON formatting");
+    }
+    out.push_str("]}");
+    println!("{out}");
+}
+
+/// Deliberately not an extraction interface: NCSD partition metadata cannot
+/// authenticate an encrypted NCCH payload or the signed cartridge header.
+fn run_ncsd_partitions(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = inspect(&mut file)?;
+    if report.format != Format::Nintendo3dsCartridge {
+        return Err("3ds partitions requires an NCSD/CCI image".into());
+    }
+    use std::io::Read as _;
+    let mut head = [0u8; 0x200];
+    file.rewind()?;
+    file.read_exact(&mut head)?;
+    let parsed = inspect_ncsd(&head, report.bytes)?;
+    print_ncsd_partitions(&parsed, json);
+    Ok(())
+}
+
+fn print_ncsd_partitions(report: &NcsdReport, json: bool) {
+    if !json {
+        println!(
+            "NCSD media ID: 0x{:016X}, unit={} bytes, partitions={}",
+            report.media_id, report.media_unit_bytes, report.partitions.len()
+        );
+        for p in &report.partitions {
+            println!(
+                "index={} offset={} size={} fs_type={} crypt_type={} id=0x{:016X}",
+                p.index, p.offset_bytes, p.size_bytes,
+                p.fs_type, p.crypt_type, p.partition_id
+            );
+        }
+        println!("NCSD signature and encrypted NCCH contents were not verified.");
+        return;
+    }
+    let mut out = format!(
+        r#"{{"format":"ncsd_partitions","media_id":"0x{:016X}","media_unit_bytes":{},"declared_media_bytes":{},"actual_file_bytes":{},"media_type":{},"signature_verified":false,"encrypted_content_verified":false,"partitions":["#,
+        report.media_id, report.media_unit_bytes,
+        report.declared_media_bytes, report.actual_file_bytes,
+        report.media_type,
+    );
+    for (index, part) in report.partitions.iter().enumerate() {
+        if index > 0 { out.push(','); }
+        write!(
+            &mut out,
+            r#"{{"index":{},"offset_bytes":{},"size_bytes":{},"fs_type":{},"crypt_type":{},"partition_id":"0x{:016X}"}}"#,
+            part.index, part.offset_bytes, part.size_bytes,
+            part.fs_type, part.crypt_type, part.partition_id
         ).expect("JSON formatting");
     }
     out.push_str("]}");
