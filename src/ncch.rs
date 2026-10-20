@@ -193,8 +193,9 @@ mod tests {
     #[test]
     fn unit_shift_changes_sizes_and_keeps_bounds() {
         let mut data = fixture();
+        data.resize(0x4000, 0);
         data[0x18e] = 1;
-        data[0x104..0x108].copy_from_slice(&12u32.to_le_bytes());
+        data[0x104..0x108].copy_from_slice(&16u32.to_le_bytes());
         let got = inspect_ncch(&data[..0x200], data.len() as u64).unwrap();
         assert_eq!(got.media_unit_bytes, 1024);
         assert_eq!(got.regions[0].offset_bytes, 2048);
