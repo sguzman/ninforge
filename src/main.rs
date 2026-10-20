@@ -4,6 +4,7 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
+use ninforge::nds_save::{inspect_ds_save, DsSaveReport};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
@@ -61,6 +62,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
             }
+        }
+        [platform, save, action, file] if platform == "nds" && save == "save" && action == "info" => {
+            print_nds_save(&inspect_ds_save(&mut File::open(file)?)?, false);
+        }
+        [platform, save, action, file, flag]
+            if platform == "nds" && save == "save" && action == "info" && flag == "--json" => {
+            print_nds_save(&inspect_ds_save(&mut File::open(file)?)?, true);
         }
         [cmd, sub, root] if cmd == "saves" && sub == "scan" => save_scan(Path::new(root), false)?,
         [cmd, sub, root, flag] if cmd == "saves" && sub == "scan" && flag == "--json" => {
@@ -276,6 +284,7 @@ Usage:
   ninforge cnmt info <file> [--json]       Parse standalone plaintext CNMT
   ninforge titles inventory <root> [--packages] [--hash] [--headers] [--json]
                                            Index immediate metadata bundle folders
+  ninforge nds save info <file> [--json] Inspect DS save wrappers, do not infer title
   ninforge saves scan <dir> [--json]       Discover save candidates by extension
   ninforge saves backup <src> <out>        Atomic no-overwrite copy of one save
   ninforge help                            Show this help
@@ -301,6 +310,30 @@ fn print_report(report: &Report, list: bool) {
             println!("{}\t{}", entry.size, entry.name);
         }
     }
+}
+
+/// DS-save inspection is intentionally explicit, because a raw file has no
+/// unique Nintendo DS signature and must not be auto-attributed to a game.
+fn print_nds_save(report: &DsSaveReport, json: bool) {
+    if !json {
+        println!("DS save candidate format: {}", report.kind.label());
+        println!("Size: {} bytes", report.size_bytes);
+        for (name, value) in &report.metadata {
+            println!("{name}: {value}");
+        }
+        return;
+    }
+    let mut output = format!(
+        r#"{{"format":{},"size_bytes":{},"metadata":{{"#,
+        json_string(report.kind.label()), report.size_bytes
+    );
+    for (index, (name, value)) in report.metadata.iter().enumerate() {
+        if index > 0 { output.push(','); }
+        write!(&mut output, "{}:{}", json_string(name), json_string(value))
+            .expect("formatting JSON string");
+    }
+    output.push_str("}}");
+    println!("{output}");
 }
 
 fn report_json(report: &Report, include_entries: bool) -> String {

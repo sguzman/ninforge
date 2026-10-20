@@ -11,6 +11,7 @@ pub mod nca;
 mod nds;
 mod nds_banner;
 mod nds_crc;
+pub mod nds_save;
 pub mod package;
 pub mod saves;
 pub mod title_inventory;
