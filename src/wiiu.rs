@@ -56,17 +56,23 @@ pub fn inspect_wux<R: Read + Seek>(reader: &mut R, bytes: u64) -> io::Result<Wux
     let mut header = [0u8; WUX_HEADER_BYTES as usize];
     reader.read_exact(&mut header)?;
     if &header[..4] != b"WUX0" || header[4..8] != WUX_SECOND_MAGIC {
-        return Err(invalid("WUX header magic does not match the supported format"));
+        return Err(invalid(
+            "WUX header magic does not match the supported format",
+        ));
     }
     let sector_size = le32(&header[8..12]);
     if !(MIN_SECTOR_BYTES..=MAX_SECTOR_BYTES).contains(&sector_size)
         || !sector_size.is_power_of_two()
     {
-        return Err(invalid("WUX sector size is unsupported or exceeds the safety cap"));
+        return Err(invalid(
+            "WUX sector size is unsupported or exceeds the safety cap",
+        ));
     }
     let logical_size = le64(&header[16..24]);
     if logical_size == 0 || logical_size > MAX_LOGICAL_BYTES {
-        return Err(invalid("WUX uncompressed size is unsupported or exceeds safety cap"));
+        return Err(invalid(
+            "WUX uncompressed size is unsupported or exceeds safety cap",
+        ));
     }
     let factor = u64::from(sector_size);
     let logical_sectors = logical_size
@@ -87,7 +93,9 @@ pub fn inspect_wux<R: Read + Seek>(reader: &mut R, bytes: u64) -> io::Result<Wux
     }
     let data_start = align_up(index_end, factor)?;
     if data_start > bytes || (bytes - data_start) % factor != 0 {
-        return Err(invalid("WUX stored sector array is truncated or misaligned"));
+        return Err(invalid(
+            "WUX stored sector array is truncated or misaligned",
+        ));
     }
     let stored_sector_count = (bytes - data_start) / factor;
     if stored_sector_count == 0 || stored_sector_count > logical_sectors {
@@ -123,7 +131,9 @@ pub fn validate_wux_index<R: Read + Seek>(
         for item in chunk.chunks_exact(4) {
             let mapped = le32(item) as u64;
             if mapped >= info.stored_sector_count {
-                return Err(invalid("WUX logical sector references an absent stored sector"));
+                return Err(invalid(
+                    "WUX logical sector references an absent stored sector",
+                ));
             }
             if !seen[mapped as usize] {
                 seen[mapped as usize] = true;

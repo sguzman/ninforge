@@ -17,11 +17,11 @@ use ninforge::package::{
 };
 use ninforge::snes::{inspect_snes_headers, SnesHeaderReport};
 use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
-use ninforge::wiiu::{inspect_wux, validate_wux_index};
 use ninforge::wii::{
     inspect_wii_disc, inspect_wii_partition_headers, validate_wbfs_maps, WbfsMapReport,
     WiiDiscReport, WiiPartitionHeader,
 };
+use ninforge::wiiu::{inspect_wux, validate_wux_index};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -518,10 +518,7 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
     println!("{output}");
 }
 
-/// Wii ISO partition positions are addresses; their sizes and encrypted
-/// contents have not been validated and are never exposed to extraction.
-/// Strict opt-in validation of the plaintext ticket-adjacent offsets only.
-/// Does not read or authenticate TMD/certificate bytes, H3 hashes, or game data.
+/// Validate the sector table without reading or decrypting WUD data.
 fn run_wux_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = File::open(path)?;
     let bytes = input.metadata()?.len();
@@ -546,6 +543,10 @@ fn run_wux_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+/// Wii ISO partition positions are addresses; their sizes and encrypted
+/// contents have not been validated and are never exposed to extraction.
+/// Strict opt-in validation of the plaintext ticket-adjacent offsets only.
+/// Does not read or authenticate TMD/certificate bytes, H3 hashes, or game data.
 fn run_wii_partition_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let report = inspect(&mut file)?;

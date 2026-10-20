@@ -60,7 +60,11 @@ fn recognizes_wux_header_and_opt_in_map_verification() {
     let bytes = synthetic_wux(&[0, 1, 0], 2);
     let fixture = Fixture::new(&bytes);
     let info = fixture.command(&["info"], true);
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let info = String::from_utf8(info.stdout).unwrap();
     assert!(info.contains(r#""format":"Wii U WUX""#));
     assert!(info.contains(r#""logical_sector_count":"3""#));
@@ -68,7 +72,11 @@ fn recognizes_wux_header_and_opt_in_map_verification() {
     assert!(info.contains(r#""index_table_verified":"false""#));
 
     let checked = fixture.command(&["wiiu", "wux-check"], true);
-    assert!(checked.status.success(), "{}", String::from_utf8_lossy(&checked.stderr));
+    assert!(
+        checked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
     let report = String::from_utf8(checked.stdout).unwrap();
     assert!(report.contains(r#""index_table_verified":true"#));
     assert!(report.contains(r#""duplicate_references":1"#));
@@ -81,13 +89,22 @@ fn recognizes_wux_header_and_opt_in_map_verification() {
 fn rejects_truncated_wux_and_invalid_sector_geometry() {
     let mut bytes = synthetic_wux(&[0, 1, 0], 2);
     bytes.truncate(SECTOR + 1);
-    assert!(!Fixture::new(&bytes).command(&["info"], false).status.success());
+    assert!(!Fixture::new(&bytes)
+        .command(&["info"], false)
+        .status
+        .success());
     let mut bytes = synthetic_wux(&[0, 1, 0], 2);
     bytes[8..12].copy_from_slice(&123u32.to_le_bytes());
-    assert!(!Fixture::new(&bytes).command(&["info"], false).status.success());
+    assert!(!Fixture::new(&bytes)
+        .command(&["info"], false)
+        .status
+        .success());
     let mut bytes = synthetic_wux(&[0, 1, 0], 2);
     bytes[4] = 0;
-    assert!(!Fixture::new(&bytes).command(&["info"], false).status.success());
+    assert!(!Fixture::new(&bytes)
+        .command(&["info"], false)
+        .status
+        .success());
 }
 
 #[test]
