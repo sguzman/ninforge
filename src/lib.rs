@@ -24,6 +24,7 @@ pub mod nds_save;
 pub mod nes;
 pub mod package;
 pub mod saves;
+pub mod snes;
 pub mod title_inventory;
 pub mod wii;
 

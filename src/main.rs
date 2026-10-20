@@ -16,6 +16,7 @@ use ninforge::package::{
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
 use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
+use ninforge::snes::{inspect_snes_headers, SnesHeaderReport};
 use ninforge::wii::{
     inspect_wii_disc, inspect_wii_partition_headers, validate_wbfs_maps, WbfsMapReport,
     WiiDiscReport, WiiPartitionHeader,
@@ -119,6 +120,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "snes" && action == "header" => {
+            run_snes_header(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "snes" && action == "header" && flag == "--json" =>
+        {
+            run_snes_header(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "cia-ticket" => {
             run_cia_ticket(file, false)?;
@@ -405,6 +414,7 @@ Usage:
   ninforge inspect <file> [--json]         Alias for info
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
+  ninforge snes header <file> [--json]      Report LoROM/HiROM candidate headers
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
   ninforge 3ds cia-ticket <file> [--json]  Compare CIA ticket and TMD title IDs
   ninforge 3ds cia-audit <file> [--json]  Compare CIA bitmap and TMD content claims
@@ -745,6 +755,68 @@ fn print_cia_sections(report: &CiaReport, json: bool) {
             section.size_bytes
         )
         .expect("format CIA section JSON");
+    }
+    out.push_str("]}");
+    println!("{out}");
+}
+
+/// SNES has no mandatory leading file signature, so only the explicitly
+/// requested subcommand inspects candidate internal headers.
+fn run_snes_header(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let report = inspect_snes_headers(&mut File::open(path)?)?;
+    print_snes_header(&report, json);
+    Ok(())
+}
+
+fn print_snes_header(report: &SnesHeaderReport, json: bool) {
+    if !json {
+        println!("SNES: {} plausible header candidates", report.candidates.len());
+        for (index, item) in report.candidates.iter().enumerate() {
+            println!(
+                "candidate={} layout={} copier_prefix={} header_offset={} title={} map_mode=0x{:02X} complement_pair={} reset_vector=0x{:04X} score={}",
+                index, item.layout, item.copier_prefix_bytes,
+                item.header_offset_bytes, item.title, item.map_mode,
+                item.checksum_pair_valid, item.reset_vector, item.evidence_score
+            );
+        }
+        if report.best_candidate_index.is_none() {
+            println!("No uniquely preferred candidate; header mapping is ambiguous.");
+        }
+        println!("Full ROM checksum, mapper hardware and cartridge authenticity NOT verified.");
+        return;
+    }
+    let best = report.best_candidate_index.map_or_else(
+        || "null".to_owned(), |index| index.to_string()
+    );
+    let mut out = format!(
+        r#"{{"format":"snes_header_candidates","file_bytes":{},"candidate_count":{},"best_candidate_index":{},"full_rom_checksum_verified":false,"candidates":["#,
+        report.file_bytes, report.candidates.len(), best
+    );
+    for (i, item) in report.candidates.iter().enumerate() {
+        if i != 0 { out.push(','); }
+        let capacity = item.declared_rom_capacity_bytes.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        let ram = item.declared_ram_capacity_bytes.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        let at_least = item.declared_rom_capacity_at_least_file.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        write!(&mut out,
+            r#"{{"layout":{},"copier_prefix_bytes":{},"header_offset_bytes":{},"title":{},"title_ascii_printable":{},"map_mode":{},"map_mode_matches_location":{},"fast_rom_claimed":{},"cartridge_type":{},"rom_size_code":{},"declared_rom_capacity_bytes":{},"declared_rom_capacity_at_least_file":{},"ram_size_code":{},"declared_ram_capacity_bytes":{},"destination_code":{},"developer_code":{},"rom_revision":{},"checksum_complement_stored":{},"checksum_stored":{},"checksum_pair_valid":{},"reset_vector":{},"reset_vector_plausible":{},"evidence_score":{}}}"#,
+            json_string(item.layout),
+            item.copier_prefix_bytes, item.header_offset_bytes,
+            json_string(&item.title), item.title_ascii_printable,
+            item.map_mode, item.map_mode_matches_location,
+            item.fast_rom_claimed, item.cartridge_type,
+            item.rom_size_code, capacity, at_least,
+            item.ram_size_code, ram, item.destination_code,
+            item.developer_code, item.rom_revision,
+            item.checksum_complement_stored, item.checksum_stored,
+            item.checksum_pair_valid, item.reset_vector,
+            item.reset_vector_plausible, item.evidence_score
+        ).expect("JSON formatting");
     }
     out.push_str("]}");
     println!("{out}");
