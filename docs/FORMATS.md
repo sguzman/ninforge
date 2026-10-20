@@ -10,7 +10,7 @@
 | Switch NSO | `NSO0` header | Full module build ID and Atmosphère short cheat build ID | No | No | No; header only |
 | Switch NACP | Explicit command (no magic) | Localized titles, publishers, display version and IDs | No | No | No; metadata parser only |
 | Switch NCA | Readable `NCA2`/`NCA3` at 0x200 | Format/length only | No | No | No |
-| 3DS cartridge | `NCSD` at 0x100 | Format/length only | No | No | No |
+| 3DS cartridge NCSD | `NCSD` at 0x100 | Media ID, declared size, media unit and type flags, partition count | `3ds partitions` shows up to 8 bounded NCCH spans | No | Explicit structural bounds only; no RSA signature/decryption or NCCH hash checks |
 | DS save wrappers | User-directed `nds save info`; DeSmuME footer, No$GBA header or original Action Replay DS `ARDS0001` wrapper | Known wrapper fields, compression flag, saved-size hints | No game-file listing | No | Bounds checks only; no save-content authenticity or chip identification |
 | DS | Expected logo CRC field + game code | Title, game/maker/unit/version codes, computed logo/header CRCs and optional multilingual banner title/CRC | Header sections, NitroFS files and banner.bin | One section, NitroFS file or banner | CRC-16 logo/header and optional banner checks; not signatures or full ROM hashing |
 | Wii disc ISO | Disc magic + ID | Game ID, title, disc version, region, four partition group counts | Partition addresses via `wii partitions`; metadata/data extent checks via `wii partition-check` | No | Table/address bounds with optional partition header metadata span checks, not decryption or hashes |
