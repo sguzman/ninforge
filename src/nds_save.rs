@@ -130,6 +130,16 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
         }
     }
 
+    // A complete, recognizable 31-byte No$GBA identifier with its required
+    // 0x1A terminator missing is truncated, not an unidentified raw save.
+    if len == NO_GBA_ID.len() as u64 {
+        input.seek(SeekFrom::Start(0))?;
+        let mut prefix = [0u8; 31];
+        input.read_exact(&mut prefix)?;
+        if &prefix == NO_GBA_ID {
+            return Err(invalid("No$GBA save header truncated"));
+        }
+    }
     if len >= 32 {
         input.seek(SeekFrom::Start(0))?;
         let mut id = [0u8; 32];
@@ -350,6 +360,58 @@ mod tests {
         false_signature[7] = b'2';
         let report = inspect_ds_save(&mut Cursor::new(false_signature)).unwrap();
         assert_eq!(report.kind, DsSaveKind::RawOrUnknown);
+    }
+
+
+    struct ReadCounter<'a> {
+        source: Cursor<&'a [u8]>,
+        read_bytes: usize,
+    }
+
+    impl Read for ReadCounter<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let count = self.source.read(buffer)?;
+            self.read_bytes += count;
+            Ok(count)
+        }
+    }
+
+    impl Seek for ReadCounter<'_> {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.source.seek(pos)
+        }
+    }
+
+    #[test]
+    fn inspection_reads_only_a_small_bound_for_large_saves() {
+        let cases = [
+            dsv(2 * 1024 * 1024, 42, 8),
+            nogba(false, 2 * 1024 * 1024),
+            ards(2 * 1024 * 1024),
+            vec![0xCC; 2 * 1024 * 1024],
+        ];
+        for case in &cases {
+            let mut reader = ReadCounter {
+                source: Cursor::new(case.as_slice()),
+                read_bytes: 0,
+            };
+            let result = inspect_ds_save(&mut reader).unwrap();
+            assert_eq!(result.size_bytes, case.len() as u64);
+            assert!(
+                reader.read_bytes <= 96,
+                "save inspector read {} bytes of {}",
+                reader.read_bytes,
+                case.len()
+            );
+        }
+    }
+
+    #[test]
+    fn missing_nogba_signature_terminator_is_a_truncation_error() {
+        let mut cursor = Cursor::new(NO_GBA_ID.to_vec());
+        let error = inspect_ds_save(&mut cursor).unwrap_err();
+        assert!(error.to_string().contains("No$GBA"));
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
     }
 
     #[test]
