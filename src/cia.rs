@@ -69,8 +69,8 @@ pub fn inspect_cia<R: Read + Seek>(input: &mut R) -> io::Result<CiaReport> {
     let mut head = [0u8; CIA_BASE_HEADER];
     input.read_exact(&mut head)?;
     let size = u32le(&head[..4]);
-    if size < CIA_BASE_HEADER as u32 || size > MAX_HEADER_SIZE || size % 0x40 != 0 {
-        return Err(bad("CIA header size is unsupported or not 64-byte aligned"));
+    if size < CIA_BASE_HEADER as u32 || size > MAX_HEADER_SIZE || size % 0x20 != 0 {
+        return Err(bad("CIA header size is unsupported or not 32-byte aligned"));
     }
     if u64::from(size) > length {
         return Err(bad("CIA declared header size exceeds file"));
