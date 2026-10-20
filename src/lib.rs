@@ -9,6 +9,7 @@ pub mod metadata_dir;
 pub mod nacp;
 pub mod nca;
 mod nds;
+mod nds_banner;
 pub mod package;
 pub mod saves;
 pub mod title_inventory;
@@ -192,6 +193,10 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         let files = nds::filesystem(input, &head, bytes)?;
         report.add("nitrofs_file_count", files.len());
         report.entries.extend(files);
+        if let Some(banner) = nds_banner::inspect_banner(input, &head, bytes)? {
+            report.metadata.extend(banner.metadata);
+            report.entries.push(banner.entry);
+        }
     } else if head.len() >= 4
         && (&head[0..4] == b"\x80\x37\x12\x40"
             || &head[0..4] == b"\x37\x80\x40\x12"
