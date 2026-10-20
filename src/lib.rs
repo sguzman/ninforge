@@ -5,6 +5,7 @@
 
 pub mod cia;
 pub mod cia_tmd;
+pub mod cia_ticket;
 pub mod cnmt;
 pub mod gb;
 pub mod gba;
