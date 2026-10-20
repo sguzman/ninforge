@@ -36,7 +36,7 @@ impl Drop for Fixture {
 }
 
 fn add_header(bytes: &mut [u8], offset: usize, mode: u8, valid_pair: bool) {
-    bytes[offset..offset + 13].copy_from_slice(b"SYNTHETIC GAME");
+    bytes[offset..offset + 14].copy_from_slice(b"SYNTHETIC GAME");
     bytes[offset + 0x15] = mode;
     bytes[offset + 0x16] = 2;
     bytes[offset + 0x17] = 8;
