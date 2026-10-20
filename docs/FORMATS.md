@@ -16,7 +16,7 @@
 | Wii disc ISO | Disc magic + ID | Game ID, title, disc version, region, four partition group counts | Partition addresses via `wii partitions`; metadata/data extent checks via `wii partition-check` | No | Table/address bounds with optional partition header metadata span checks, not decryption or hashes |
 | Wii WBFS | WBFS superblock signature | Host/virtual sector sizes, declared volume capacity and slot count | Slot count via `info`; mapped disc records via `wii wbfs-check` | No | Opt-in metadata/physical-block bounds checks; not encrypted game data/hashes |
 | GameCube disc | Disc magic + ID | Game ID and title | No | No | No |
-| GBA | Fixed header byte, game code, complement checksum | Title, game/maker code, version | No | No | No |
+| GBA | Fixed 0x96 byte + plausible game code (checksum can be damaged) | Title, maker/game codes, version, unit/debug flags, complement and weak logo sum | No | No | Header-only complement plus weak logo sum, not exact bitmap/full-ROM validation |
 | GB/GBC | Cartridge logo (header checksum may be damaged) | Title, CGB/SGB flags, mapper, ROM/RAM capacity codes, licensee, header checksum | No | No | Explicit `verify` streams the ROM to check declared file size, header checksum and additive global checksum (not cryptographic) |
 | N64 | Three standard byte-order magics | Byte order | No | No | No |
 | NES | iNES signature | Header type, basic sizes, mapper (iNES only) | No | No | No |
@@ -27,7 +27,7 @@
 - File extensions are not used to claim format support; an unknown header remains Unknown even if named `.nsp`.
 - An NSP is a PFS0 outer container. `info` cannot report a reliably decrypted title ID, display name, build ID, or game version yet.
 - NES 2.0 is identified but extended sizes and mapper fields are **not** interpreted as iNES.
-- GBA header checksum remains a recognition heuristic; GB/GBC `info` instead reports header-checksum validity and `verify` checks full length and global additive checksum. An invalid global checksum is an explicit verification failure but not proof of tampering or non-authenticity.
+- GBA `info` separately reports checksum status; `verify` checks only the 0xC0-byte header (there is no standard global ROM checksum or declared ROM capacity). GB/GBC `verify` checks full length and a global additive checksum. An invalid global checksum is an explicit verification failure but not proof of tampering or non-authenticity.
 - Wii ISO partition table pointers use 4-byte words, not byte offsets. Table parsing caps counts, checks duplicate addresses and never treats a partition offset as a content length. WBFS parsing does not reconstruct or decrypt the filesystem.
 - XCI, NCA and 3DS signature detection may not recognize encrypted or differently laid out variants.
 - DS regions include header sections and NitroFS; DS header/logo and optional banner CRCs are checked when `verify` is requested.
