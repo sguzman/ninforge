@@ -142,6 +142,125 @@ pub fn inspect_wii_disc<R: Read + Seek>(
     })
 }
 
+/// Structural spans declared by a Wii ISO partition's unencrypted header.
+/// All offsets below are absolute byte positions within the supplied ISO.
+/// These are unauthenticated claims, never evidence of a valid ticket or TMD.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WiiPartitionHeader {
+    pub group: usize,
+    pub index: u32,
+    pub partition_offset_bytes: u64,
+    pub partition_type: u32,
+    pub tmd_offset_bytes: u64,
+    pub tmd_size_bytes: u64,
+    pub cert_offset_bytes: Option<u64>,
+    pub cert_size_bytes: u64,
+    pub h3_offset_bytes: Option<u64>,
+    pub data_offset_bytes: u64,
+    pub data_size_bytes: u64,
+}
+
+fn word_offset(raw: &[u8]) -> u64 {
+    u64::from(be32(raw)) * 4
+}
+
+fn checked_partition_span(
+    base: u64,
+    relative: u64,
+    size: u64,
+    file_bytes: u64,
+    data_start: u64,
+) -> io::Result<(u64, u64)> {
+    if relative < 0x2c0 || size == 0 {
+        return Err(bad("Wii partition metadata span is empty or overlaps its header"));
+    }
+    let start = base.checked_add(relative)
+        .ok_or_else(|| bad("Wii partition metadata address overflow"))?;
+    let end = start.checked_add(size)
+        .ok_or_else(|| bad("Wii partition metadata span overflow"))?;
+    if end > data_start || end > file_bytes {
+        return Err(bad("Wii partition metadata span outside header area or ISO"));
+    }
+    Ok((start, end))
+}
+
+/// Opt-in header check: read only 28 bytes of *unencrypted* offset/length
+/// fields for each partition already identified by the four Wii disc tables.
+/// TMD, certificate and H3 bytes are not parsed, trusted, or authenticated.
+pub fn inspect_wii_partition_headers<R: Read + Seek>(
+    input: &mut R,
+    file_bytes: u64,
+) -> io::Result<Vec<WiiPartitionHeader>> {
+    let disc = inspect_wii_disc(input, file_bytes)?;
+    let mut verified = Vec::with_capacity(disc.partitions.len());
+    for part in &disc.partitions {
+        let metadata_start = part.offset_bytes.checked_add(0x2a4)
+            .ok_or_else(|| bad("Wii partition field offset overflow"))?;
+        let metadata_end = metadata_start.checked_add(0x1c)
+            .ok_or_else(|| bad("Wii partition field end overflow"))?;
+        if metadata_end > file_bytes {
+            return Err(bad("Wii partition header fields outside ISO"));
+        }
+        let mut bytes = [0u8; 0x1c];
+        read_at(input, metadata_start, &mut bytes)?;
+        let tmd_size = u64::from(be32(&bytes[0..4]));
+        let tmd_relative = word_offset(&bytes[4..8]);
+        let cert_size = u64::from(be32(&bytes[8..12]));
+        let cert_relative = word_offset(&bytes[12..16]);
+        let h3_relative = word_offset(&bytes[16..20]);
+        let data_relative = word_offset(&bytes[20..24]);
+        let data_size = word_offset(&bytes[24..28]);
+        if data_relative < 0x2c0 || data_size == 0 {
+            return Err(bad("Wii partition has invalid data offset or empty data"));
+        }
+        let data_start = part.offset_bytes.checked_add(data_relative)
+            .ok_or_else(|| bad("Wii partition data offset overflow"))?;
+        let data_end = data_start.checked_add(data_size)
+            .ok_or_else(|| bad("Wii partition data length overflow"))?;
+        if data_end > file_bytes {
+            return Err(bad("Wii partition data extent outside ISO"));
+        }
+        let tmd = checked_partition_span(
+            part.offset_bytes, tmd_relative, tmd_size, file_bytes, data_start
+        )?;
+        let cert = if cert_size == 0 && cert_relative == 0 {
+            None
+        } else {
+            Some(checked_partition_span(
+                part.offset_bytes, cert_relative, cert_size, file_bytes, data_start
+            )?)
+        };
+        let h3 = if h3_relative == 0 {
+            None
+        } else {
+            Some(checked_partition_span(
+                part.offset_bytes, h3_relative, 0x18000, file_bytes, data_start
+            )?)
+        };
+        let mut ranges = vec![tmd];
+        if let Some(span) = cert { ranges.push(span); }
+        if let Some(span) = h3 { ranges.push(span); }
+        ranges.sort_by_key(|span| span.0);
+        if ranges.windows(2).any(|window| window[0].1 > window[1].0) {
+            return Err(bad("Wii partition metadata spans overlap"));
+        }
+        verified.push(WiiPartitionHeader {
+            group: part.group,
+            index: part.index,
+            partition_offset_bytes: part.offset_bytes,
+            partition_type: part.partition_type,
+            tmd_offset_bytes: tmd.0,
+            tmd_size_bytes: tmd_size,
+            cert_offset_bytes: cert.map(|span| span.0),
+            cert_size_bytes: cert_size,
+            h3_offset_bytes: h3.map(|span| span.0),
+            data_offset_bytes: data_start,
+            data_size_bytes: data_size,
+        });
+    }
+    Ok(verified)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WbfsHeader {
     pub host_sector_bytes: u64,
