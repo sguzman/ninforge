@@ -2,7 +2,7 @@
 //!
 //! A raw save has no universal magic, so its size cannot establish the title,
 //! save-chip model, emulator, or even that the bytes are a Nintendo DS save.
-//! Supported structured wrappers are DeSmuME DSV and No$GBA SRAM containers.
+//! Supported structured wrappers are DeSmuME DSV, No$GBA SRAM, and Action Replay DS.
 //! No decompression, guessing a cartridge association, or modification.
 
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
@@ -11,6 +11,8 @@ const DSV_COOKIE: &[u8; 16] = b"|-DESMUME SAVE-|";
 const NO_GBA_ID: &[u8; 31] = b"NocashGbaBackupMediaSavDataFile";
 const DSV_FOOTER: u64 = 40;
 const NO_GBA_HEADER: u64 = 0x50;
+const ACTION_REPLAY_MAGIC: &[u8; 8] = b"ARDS0001";
+const ACTION_REPLAY_HEADER: u64 = 500;
 const MAX_REASONABLE_DATA: u64 = 128 * 1024 * 1024;
 
 /// A byte-based observation, not a successful load by any emulator.
@@ -18,6 +20,7 @@ const MAX_REASONABLE_DATA: u64 = 128 * 1024 * 1024;
 pub enum DsSaveKind {
     DeSmuMe,
     NoGba,
+    ActionReplayDs,
     RawOrUnknown,
 }
 impl DsSaveKind {
@@ -25,6 +28,7 @@ impl DsSaveKind {
         match self {
             Self::DeSmuMe => "desmume_dsv",
             Self::NoGba => "no_gba_sram",
+            Self::ActionReplayDs => "action_replay_ds",
             Self::RawOrUnknown => "raw_or_unidentified",
         }
     }
@@ -126,7 +130,7 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
         }
     }
 
-    if len >= NO_GBA_ID.len() as u64 {
+    if len >= 32 {
         input.seek(SeekFrom::Start(0))?;
         let mut id = [0u8; 32];
         input.read_exact(&mut id)?;
@@ -182,6 +186,31 @@ pub fn inspect_ds_save<R: Read + Seek>(input: &mut R) -> io::Result<DsSaveReport
             }
             add(&mut report, "payload_offset", NO_GBA_HEADER);
             add(&mut report, "payload_not_decompressed", compressed != 0);
+            add(&mut report, "format_signature_verified", true);
+            return Ok(report);
+        }
+    }
+
+    // Original DS Action Replay exports start with ARDS0001 and use a
+    // fixed 500-byte wrapper. We do not infer the game's identity from
+    // uninterpreted bytes inside the wrapper or its raw save payload.
+    if len >= ACTION_REPLAY_MAGIC.len() as u64 {
+        input.seek(SeekFrom::Start(0))?;
+        let mut header = [0u8; 8];
+        input.read_exact(&mut header)?;
+        if &header == ACTION_REPLAY_MAGIC {
+            if len <= ACTION_REPLAY_HEADER {
+                return Err(invalid("Action Replay DS header or save payload truncated"));
+            }
+            let payload_size = len - ACTION_REPLAY_HEADER;
+            if payload_size > MAX_REASONABLE_DATA {
+                return Err(invalid("Action Replay DS save payload exceeds safety cap"));
+            }
+            report.kind = DsSaveKind::ActionReplayDs;
+            add(&mut report, "wrapper_size_bytes", ACTION_REPLAY_HEADER);
+            add(&mut report, "payload_offset", ACTION_REPLAY_HEADER);
+            add(&mut report, "payload_size_bytes", payload_size);
+            add(&mut report, "metadata_not_decoded", true);
             add(&mut report, "format_signature_verified", true);
             return Ok(report);
         }
@@ -288,6 +317,39 @@ mod tests {
         bytes = nogba(false, 512);
         bytes[0x44..0x48].copy_from_slice(&2u32.to_le_bytes());
         assert!(inspect_ds_save(&mut Cursor::new(bytes)).is_err());
+    }
+
+    fn ards(payload: usize) -> Vec<u8> {
+        let mut file = vec![0u8; ACTION_REPLAY_HEADER as usize + payload];
+        file[..8].copy_from_slice(ACTION_REPLAY_MAGIC);
+        file[ACTION_REPLAY_HEADER as usize..].fill(0xA5);
+        file
+    }
+
+    #[test]
+    fn action_replay_ds_wrapper_identified_without_title_inference() {
+        let fixture = ards(8192);
+        let mut file = Cursor::new(fixture);
+        let report = inspect_ds_save(&mut file).unwrap();
+        assert_eq!(report.kind, DsSaveKind::ActionReplayDs);
+        assert_eq!(field(&report, "wrapper_size_bytes"), Some("500"));
+        assert_eq!(field(&report, "payload_offset"), Some("500"));
+        assert_eq!(field(&report, "payload_size_bytes"), Some("8192"));
+        assert_eq!(field(&report, "metadata_not_decoded"), Some("true"));
+        assert_eq!(field(&report, "game_association_verified"), Some("false"));
+    }
+
+    #[test]
+    fn action_replay_ds_truncated_wrappers_fail_closed() {
+        for size in [8, 64, 499, 500] {
+            let mut bytes = vec![0u8; size];
+            bytes[..8].copy_from_slice(ACTION_REPLAY_MAGIC);
+            assert!(inspect_ds_save(&mut Cursor::new(bytes)).is_err());
+        }
+        let mut false_signature = ards(512);
+        false_signature[7] = b'2';
+        let report = inspect_ds_save(&mut Cursor::new(false_signature)).unwrap();
+        assert_eq!(report.kind, DsSaveKind::RawOrUnknown);
     }
 
     #[test]
