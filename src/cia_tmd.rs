@@ -49,7 +49,7 @@ pub struct CiaTmdReport {
     pub cryptographic_integrity_verified: bool,
 }
 
-fn signed_header_base(signature_type: u32) -> Option<u64> {
+pub(crate) fn signed_header_base(signature_type: u32) -> Option<u64> {
     match signature_type {
         0x0001_0000 | 0x0001_0003 => Some(0x240), // RSA4096
         0x0001_0001 | 0x0001_0004 => Some(0x140), // RSA2048
