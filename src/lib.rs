@@ -4,6 +4,7 @@
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
 pub mod cnmt;
+pub mod cia;
 pub mod gb;
 pub mod gba;
 mod hfs0;
@@ -40,6 +41,7 @@ pub enum Format {
     SwitchCnmt,
     Nintendo3dsCartridge,
     Nintendo3dsNcch,
+    Nintendo3dsCia,
     NintendoDs,
     Wii,
     WiiWbfs,
@@ -64,6 +66,7 @@ impl Format {
             Self::SwitchCnmt => "Switch CNMT metadata",
             Self::Nintendo3dsCartridge => "Nintendo 3DS NCSD",
             Self::Nintendo3dsNcch => "Nintendo 3DS NCCH",
+            Self::Nintendo3dsCia => "Nintendo 3DS CIA",
             Self::NintendoDs => "Nintendo DS",
             Self::Wii => "Wii disc",
             Self::WiiWbfs => "Wii WBFS",
@@ -86,7 +89,7 @@ impl Format {
             | Self::SwitchXci
             | Self::SwitchNca
             | Self::SwitchCnmt => "switch",
-            Self::Nintendo3dsCartridge | Self::Nintendo3dsNcch => "3ds",
+            Self::Nintendo3dsCartridge | Self::Nintendo3dsNcch | Self::Nintendo3dsCia => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii | Self::WiiWbfs => "wii",
             Self::GameCube => "gamecube",
@@ -146,6 +149,17 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("occupied_disc_slots", header.occupied_disc_slots);
         report.add("available_disc_slots", header.available_disc_slots);
         report.add("block_map_verified", false);
+    } else if cia::could_be_cia(&head, bytes) {
+        let archive = cia::inspect_cia(input)?;
+        report.format = Format::Nintendo3dsCia;
+        report.add("archive_type", archive.archive_type);
+        report.add("archive_version", archive.archive_version);
+        report.add("header_size_bytes", archive.header_size_bytes);
+        report.add("content_index_set_bits", archive.content_index_set_bits);
+        report.add("section_count", archive.sections.len());
+        report.add("trailing_bytes", archive.file_trailing_bytes);
+        report.add("signature_verified", false);
+        report.add("encrypted_content_verified", false);
     } else if head.starts_with(b"PFS0") {
         report.format = Format::SwitchNsp;
         report.entries = parse_pfs0(input, bytes)?;
