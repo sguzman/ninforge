@@ -85,7 +85,8 @@ fn valid_synthetic_header_reports_both_crc_values_and_verifies() {
 #[test]
 fn edited_header_still_inspects_but_verify_fails() {
     let mut rom = fixture(false);
-    rom[0x20] ^= 1;
+    // Alter an unused header byte, not the ARM9 section-offset field.
+    rom[0x88] ^= 1;
     let t = Temp::new(&rom);
     let info = t.run("info", true);
     assert!(info.status.success());
