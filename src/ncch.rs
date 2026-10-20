@@ -48,7 +48,8 @@ pub fn inspect_ncch(head: &[u8], file_bytes: u64) -> io::Result<NcchReport> {
     }
     let unit = 0x200u64 << shift;
     let declared_units = u64::from(le32(&head[0x104..0x108]));
-    let capacity = declared_units.checked_mul(unit)
+    let capacity = declared_units
+        .checked_mul(unit)
         .ok_or_else(|| bad("NCCH declared content capacity overflow"))?;
     if capacity < HEADER_BYTES as u64 || file_bytes < HEADER_BYTES as u64 {
         return Err(bad("NCCH content smaller than header"));
@@ -56,24 +57,34 @@ pub fn inspect_ncch(head: &[u8], file_bytes: u64) -> io::Result<NcchReport> {
     let partition_id = u64::from_le_bytes(head[0x108..0x110].try_into().unwrap());
     let program_id = u64::from_le_bytes(head[0x118..0x120].try_into().unwrap());
     let code = &head[0x150..0x160];
-    let code_end = code.iter().position(|byte| *byte == 0).unwrap_or(code.len());
-    if !code[..code_end].iter().all(|b| b.is_ascii_graphic() && *b != b'\\') {
+    let code_end = code
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(code.len());
+    if !code[..code_end]
+        .iter()
+        .all(|b| b.is_ascii_graphic() && *b != b'\\')
+    {
         return Err(bad("NCCH product code contains invalid characters"));
     }
     let product_code = std::str::from_utf8(&code[..code_end])
-        .map_err(|_| bad("NCCH product code encoding invalid"))?.to_owned();
+        .map_err(|_| bad("NCCH product code encoding invalid"))?
+        .to_owned();
     let mut regions = Vec::new();
     let mut spans = Vec::new();
     // Optional extended header occupies 2 * the declared size at 0x200.
     let extended = u64::from(le32(&head[0x180..0x184]));
     if extended > 0 {
-        let extent = extended.checked_mul(2)
+        let extent = extended
+            .checked_mul(2)
             .ok_or_else(|| bad("NCCH extended header size overflow"))?;
         if extent > capacity - HEADER_BYTES as u64 || extent > file_bytes - HEADER_BYTES as u64 {
             return Err(bad("NCCH extended header extends beyond file"));
         }
         regions.push(NcchRegion {
-            name: "exheader", offset_bytes: 0x200, size_bytes: extent,
+            name: "exheader",
+            offset_bytes: 0x200,
+            size_bytes: extent,
         });
         spans.push((0x200, 0x200 + extent));
     }
@@ -91,17 +102,22 @@ pub fn inspect_ncch(head: &[u8], file_bytes: u64) -> io::Result<NcchReport> {
         if offset_units == 0 || size_units == 0 {
             return Err(bad("NCCH content region has incomplete offset/size pair"));
         }
-        let offset = offset_units.checked_mul(unit)
+        let offset = offset_units
+            .checked_mul(unit)
             .ok_or_else(|| bad("NCCH region offset overflow"))?;
-        let length = size_units.checked_mul(unit)
+        let length = size_units
+            .checked_mul(unit)
             .ok_or_else(|| bad("NCCH region size overflow"))?;
-        let end = offset.checked_add(length)
+        let end = offset
+            .checked_add(length)
             .ok_or_else(|| bad("NCCH region end overflow"))?;
         if offset < HEADER_BYTES as u64 || end > capacity || end > file_bytes {
             return Err(bad("NCCH region extends outside declared capacity or file"));
         }
         regions.push(NcchRegion {
-            name, offset_bytes: offset, size_bytes: length,
+            name,
+            offset_bytes: offset,
+            size_bytes: length,
         });
         spans.push((offset, end));
     }
@@ -110,15 +126,19 @@ pub fn inspect_ncch(head: &[u8], file_bytes: u64) -> io::Result<NcchReport> {
         return Err(bad("NCCH content-region spans overlap"));
     }
     Ok(NcchReport {
-        partition_id, program_id, product_code,
-        media_unit_bytes: unit, declared_content_bytes: capacity,
+        partition_id,
+        program_id,
+        product_code,
+        media_unit_bytes: unit,
+        declared_content_bytes: capacity,
         actual_file_bytes: file_bytes,
         crypto_method: head[0x18b],
         content_platform: head[0x18c],
         content_form: head[0x18d] & 3,
         content_type: head[0x18d] >> 2,
         no_crypto_flag: head[0x18f] & 0x04 != 0,
-        regions, cryptographic_integrity_verified: false,
+        regions,
+        cryptographic_integrity_verified: false,
     })
 }
 
@@ -162,11 +182,15 @@ mod tests {
         let mut data = fixture();
         data[0x1b0..0x1b4].copy_from_slice(&5u32.to_le_bytes());
         assert!(inspect_ncch(&data[..0x200], data.len() as u64)
-            .unwrap_err().to_string().contains("overlap"));
+            .unwrap_err()
+            .to_string()
+            .contains("overlap"));
         data = fixture();
         data[0x1b4..0x1b8].copy_from_slice(&20u32.to_le_bytes());
         assert!(inspect_ncch(&data[..0x200], data.len() as u64)
-            .unwrap_err().to_string().contains("outside"));
+            .unwrap_err()
+            .to_string()
+            .contains("outside"));
     }
 
     #[test]
@@ -174,11 +198,15 @@ mod tests {
         let mut data = fixture();
         data[0x1a0..0x1a4].fill(0);
         assert!(inspect_ncch(&data[..0x200], data.len() as u64)
-            .unwrap_err().to_string().contains("incomplete"));
+            .unwrap_err()
+            .to_string()
+            .contains("incomplete"));
         data = fixture();
         data[0x180..0x184].copy_from_slice(&0x300u32.to_le_bytes());
         assert!(inspect_ncch(&data[..0x200], data.len() as u64)
-            .unwrap_err().to_string().contains("overlap"));
+            .unwrap_err()
+            .to_string()
+            .contains("overlap"));
     }
 
     #[test]

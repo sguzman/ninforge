@@ -23,13 +23,20 @@ fn fixture() -> Vec<u8> {
     data[0x1b4..0x1b8].copy_from_slice(&8u32.to_le_bytes());
     data
 }
-struct Fixture { dir: PathBuf, path: PathBuf }
+struct Fixture {
+    dir: PathBuf,
+    path: PathBuf,
+}
 impl Fixture {
     fn new(image: &[u8]) -> Self {
-        let tick = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let tick = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!(
             "ninforge-ncch-test-{}-{tick}-{}",
-            std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&dir).unwrap();
         let path = dir.join("sample.bin");
@@ -39,18 +46,24 @@ impl Fixture {
     fn run(&self, command: &str, json: bool) -> Output {
         let mut cli = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cli.arg(command).arg(&self.path);
-        if json { cli.arg("--json"); }
+        if json {
+            cli.arg("--json");
+        }
         cli.output().unwrap()
     }
     fn regions(&self, json: bool) -> Output {
         let mut cli = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cli.args(["3ds", "ncch-regions"]).arg(&self.path);
-        if json { cli.arg("--json"); }
+        if json {
+            cli.arg("--json");
+        }
         cli.output().unwrap()
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.dir); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
 }
 
 #[test]
@@ -58,14 +71,22 @@ fn info_and_regions_list_declared_ncch_spans_without_decrypting() {
     let raw = fixture();
     let file = Fixture::new(&raw);
     let info = file.run("info", true);
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let json = String::from_utf8(info.stdout).unwrap();
     assert!(json.contains(r#""format":"Nintendo 3DS NCCH""#));
     assert!(json.contains(r#""product_code":"CTR-DEMO""#));
     assert!(json.contains(r#""region_count":"2""#));
     assert!(json.contains(r#""cryptographic_integrity_verified":"false""#));
     let listing = file.regions(true);
-    assert!(listing.status.success(), "{}", String::from_utf8_lossy(&listing.stderr));
+    assert!(
+        listing.status.success(),
+        "{}",
+        String::from_utf8_lossy(&listing.stderr)
+    );
     let json = String::from_utf8(listing.stdout).unwrap();
     assert!(json.contains(r#""format":"ncch_regions""#));
     assert!(json.contains(r#""name":"exefs","offset_bytes":1024,"size_bytes":2048"#));
@@ -73,7 +94,9 @@ fn info_and_regions_list_declared_ncch_spans_without_decrypting() {
     assert!(json.contains(r#""cryptographic_integrity_verified":false"#));
     let checked = file.run("verify", false);
     assert!(checked.status.success());
-    assert!(String::from_utf8(checked.stdout).unwrap().contains("content hashes NOT verified"));
+    assert!(String::from_utf8(checked.stdout)
+        .unwrap()
+        .contains("content hashes NOT verified"));
     assert_eq!(fs::read(&file.path).unwrap(), raw);
 }
 

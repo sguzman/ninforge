@@ -4,8 +4,8 @@ use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
-use ninforge::ncsd::{inspect_ncsd, NcsdReport};
 use ninforge::ncch::{inspect_ncch, NcchReport};
+use ninforge::ncsd::{inspect_ncsd, NcsdReport};
 use ninforge::nds_save::{inspect_ds_save, DsSaveReport};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
@@ -103,7 +103,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_ncch_regions(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "3ds" && action == "ncch-regions" && flag == "--json" => {
+            if platform == "3ds" && action == "ncch-regions" && flag == "--json" =>
+        {
             run_ncch_regions(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "partitions" => {
@@ -523,15 +524,24 @@ fn print_ncch_regions(info: &NcchReport, json: bool) {
     }
     let mut out = format!(
         r#"{{"format":"ncch_regions","program_id":"0x{:016X}","partition_id":"0x{:016X}","product_code":{},"media_unit_bytes":{},"declared_content_bytes":{},"signature_verified":false,"cryptographic_integrity_verified":false,"regions":["#,
-        info.program_id, info.partition_id, json_string(&info.product_code),
-        info.media_unit_bytes, info.declared_content_bytes
+        info.program_id,
+        info.partition_id,
+        json_string(&info.product_code),
+        info.media_unit_bytes,
+        info.declared_content_bytes
     );
     for (index, region) in info.regions.iter().enumerate() {
-        if index > 0 { out.push(','); }
-        write!(&mut out,
+        if index > 0 {
+            out.push(',');
+        }
+        write!(
+            &mut out,
             r#"{{"name":{},"offset_bytes":{},"size_bytes":{}}}"#,
-            json_string(region.name), region.offset_bytes, region.size_bytes
-        ).expect("JSON formatting");
+            json_string(region.name),
+            region.offset_bytes,
+            region.size_bytes
+        )
+        .expect("JSON formatting");
     }
     out.push_str("]}");
     println!("{out}");
