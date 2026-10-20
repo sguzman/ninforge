@@ -74,6 +74,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ninforge::gba::verify_gba_header(&mut File::open(file)?)?;
                     println!("OK: GBA fixed header, complement checksum and weak logo sum match (header-only; no full-ROM checksum, signature or logo byte authentication)");
                 }
+                Format::Nintendo64 => {
+                    println!("OK: N64 byte-order signature and 64-byte header recognized (stored CRC1/CRC2 NOT verified; no full-ROM integrity check)");
+                }
                 Format::Nintendo3dsCartridge => {
                     println!("OK: 3DS NCSD partition byte ranges are bounded (NCSD signature and encrypted NCCH contents NOT verified)");
                 }
