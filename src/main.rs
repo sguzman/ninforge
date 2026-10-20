@@ -4,7 +4,7 @@ use ninforge::cia::{inspect_cia, CiaReport};
 use ninforge::cia_ticket::{inspect_cia_ticket, CiaTicketReport};
 use ninforge::cia_tmd::{inspect_cia_tmd, CiaTmdReport};
 use ninforge::cnmt::inspect_cnmt;
-use ninforge::gamecube::{inspect_gamecube, inspect_main_dol};
+use ninforge::gamecube::{inspect_apploader, inspect_gamecube, inspect_main_dol};
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
@@ -134,6 +134,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "gamecube" && action == "apploader-check" => {
+            run_gamecube_apploader_check(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "gamecube" && action == "apploader-check" && flag == "--json" =>
+        {
+            run_gamecube_apploader_check(file, true)?;
         }
         [platform, action, file] if platform == "gamecube" && action == "dol-check" => {
             run_gamecube_dol_check(file, false)?;
@@ -453,6 +461,7 @@ Usage:
   ninforge snes header <file> [--json]      Report LoROM/HiROM candidate headers
   ninforge wiiu wux-check <file> [--json]  Validate WUX stored-sector index references
   ninforge gamecube dol-check <file> [--json]  Check GameCube main DOL section spans
+  ninforge gamecube apploader-check <file> [--json]  Check GameCube apploader spans
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
   ninforge 3ds cia-ticket <file> [--json]  Compare CIA ticket and TMD title IDs
   ninforge 3ds cia-audit <file> [--json]  Compare CIA bitmap and TMD content claims
@@ -526,6 +535,37 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
     }
     output.push_str("}}");
     println!("{output}");
+}
+
+/// Inspect the fixed apploader header and aligned payload byte range.
+fn run_gamecube_apploader_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open(path)?;
+    let info = inspect(&mut input)?;
+    if info.format != Format::GameCube {
+        return Err("gamecube apploader-check requires a recognized GCM/ISO disc image".into());
+    }
+    let disc = inspect_gamecube(&mut input, info.bytes)?;
+    let loader = inspect_apploader(&mut input, info.bytes, &disc)?;
+    if json {
+        println!(
+            r#"{{"format":"gamecube_apploader","revision":{},"entry_point":"0x{:08X}","code_size_bytes":{},"trailer_size_bytes":{},"padded_end_bytes":{},"content_hashes_verified":false}}"#,
+            json_string(&loader.revision),
+            loader.entry_point,
+            loader.code_size_bytes,
+            loader.trailer_size_bytes,
+            loader.padded_end_bytes
+        );
+    } else {
+        println!(
+            "GameCube apploader revision: {}; entry point: 0x{:08X}; code {} bytes + trailer {} bytes; image extent ends at {} (no code/authenticity check)",
+            loader.revision,
+            loader.entry_point,
+            loader.code_size_bytes,
+            loader.trailer_size_bytes,
+            loader.padded_end_bytes
+        );
+    }
+    Ok(())
 }
 
 /// Inspect main DOL section offsets and storage extents, without reading code.

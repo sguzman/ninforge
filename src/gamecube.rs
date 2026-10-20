@@ -295,3 +295,77 @@ pub fn inspect_main_dol<R: Read + Seek>(
         sections,
     })
 }
+
+const APPLOADER_OFFSET: u64 = 0x2440;
+const APPLOADER_HEADER_SIZE: u64 = 0x20;
+
+#[derive(Debug, Clone)]
+pub struct ApploaderReport {
+    pub revision: String,
+    pub entry_point: u32,
+    pub code_size_bytes: u32,
+    pub trailer_size_bytes: u32,
+    pub padded_end_bytes: u64,
+}
+
+/// Inspect fixed-position GameCube apploader metadata and the aligned extent.
+/// This checks physical layout, not executable behavior, authenticity or code.
+pub fn inspect_apploader<R: Read + Seek>(
+    reader: &mut R,
+    file_bytes: u64,
+    disc: &GameCubeDisc,
+) -> io::Result<ApploaderReport> {
+    let header_end = APPLOADER_OFFSET + APPLOADER_HEADER_SIZE;
+    if file_bytes < header_end {
+        return Err(invalid("GameCube apploader header is truncated"));
+    }
+    reader.seek(SeekFrom::Start(APPLOADER_OFFSET))?;
+    let mut header = [0u8; APPLOADER_HEADER_SIZE as usize];
+    reader.read_exact(&mut header)?;
+    let end = header[..16]
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(16);
+    let revision_bytes = &header[..end];
+    if revision_bytes
+        .iter()
+        .any(|byte| !byte.is_ascii_graphic() && *byte != b' ')
+    {
+        return Err(invalid("GameCube apploader revision contains non-ASCII bytes"));
+    }
+    let revision = std::str::from_utf8(revision_bytes)
+        .map_err(|_| invalid("GameCube apploader revision is invalid UTF-8"))?
+        .trim()
+        .to_owned();
+    let entry_point = be32(&header[0x10..0x14]);
+    let code_size = be32(&header[0x14..0x18]);
+    let trailer_size = be32(&header[0x18..0x1c]);
+    if code_size == 0 {
+        return Err(invalid("GameCube apploader has an empty code span"));
+    }
+    let bytes = u64::from(code_size) + u64::from(trailer_size);
+    let padded_end = header_end
+        .checked_add(bytes.div_ceil(32) * 32)
+        .ok_or_else(|| invalid("GameCube apploader length overflow"))?;
+    if padded_end > file_bytes {
+        return Err(invalid("GameCube apploader extends beyond the disc image"));
+    }
+    for (name, offset) in [
+        ("main DOL", u64::from(disc.dol_offset_bytes)),
+        ("FST", u64::from(disc.fst_offset_bytes)),
+    ] {
+        if offset >= APPLOADER_OFFSET && offset < padded_end {
+            return Err(invalid(match name {
+                "main DOL" => "GameCube apploader overlaps the main DOL header",
+                _ => "GameCube apploader overlaps the FST",
+            }));
+        }
+    }
+    Ok(ApploaderReport {
+        revision,
+        entry_point,
+        code_size_bytes: code_size,
+        trailer_size_bytes: trailer_size,
+        padded_end_bytes: padded_end,
+    })
+}
