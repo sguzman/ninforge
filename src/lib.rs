@@ -508,7 +508,7 @@ mod tests {
     #[test]
     fn gba_checksum_matches_independent_constant() {
         // Subtract the documented 0x19 complement, not 29 individual ones.
-        let mut bytes = vec![0; 0xbe];
+        let mut bytes = vec![0; 0xc0];
         bytes[0xac..0xb0].copy_from_slice(b"ABCD");
         bytes[0xb2] = 0x96;
         let complement = bytes[0xa0..0xbd]
