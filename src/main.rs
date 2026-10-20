@@ -83,6 +83,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Format::Nintendo3dsCia => {
                     println!("OK: 3DS CIA aligned section bounds are valid (ticket, TMD, signatures, and encrypted contents NOT verified)");
                 }
+                Format::Nes => {
+                    use std::io::Read as _;
+                    let mut file = File::open(file)?;
+                    let mut header = [0u8;16];
+                    file.read_exact(&mut header)?;
+                    let checked = ninforge::nes::verify_nes(&header, report.bytes)?;
+                    println!(
+                        "OK: NES {} mapper={} declared PRG/CHR regions fit file (no ROM data checksum or signature)",
+                        if checked.nes2 { "2.0" } else { "iNES" }, checked.mapper
+                    );
+                }
                 Format::NintendoDs => {
                     require_sections(&report)?;
                     verify_ds_checks(&report)?;
