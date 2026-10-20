@@ -11,7 +11,7 @@
 | Switch NACP | Explicit command (no magic) | Localized titles, publishers, display version and IDs | No | No | No; metadata parser only |
 | Switch NCA | Readable `NCA2`/`NCA3` at 0x200 | Format/length only | No | No | No |
 | 3DS cartridge | `NCSD` at 0x100 | Format/length only | No | No | No |
-| DS | Expected logo CRC + game code | Title, game/maker/unit/version codes, section count and optional multilingual banner title/CRC | Header sections, NitroFS files and banner.bin | One section, NitroFS file or banner | No; bounded sections, directory/FAT/file checks and banner CRC status |
+| DS | Expected logo CRC field + game code | Title, game/maker/unit/version codes, computed logo/header CRCs and optional multilingual banner title/CRC | Header sections, NitroFS files and banner.bin | One section, NitroFS file or banner | CRC-16 logo/header and optional banner checks; not signatures or full ROM hashing |
 | Wii disc | Disc magic + ID | Game ID | No | No | No |
 | GameCube disc | Disc magic + ID | Game ID and title | No | No | No |
 | GBA | Fixed header byte, game code, complement checksum | Title, game/maker code, version | No | No | No |

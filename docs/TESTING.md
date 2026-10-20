@@ -75,3 +75,7 @@ As in the HFS0 parser, PFS0 rejects slash/backslash path separators, the `.` and
 ## Nintendo DS/DSi cartridge banners
 
 Version 1/2/3/0x0103 banners are constructed entirely from synthetic data, referenced through the DS ROM header offset 0x68, and read with a fixed maximum of 0x23c0 bytes. Unit tests cover little-endian version size, languages, UTF-16 titles, CRC-16/IBM reference vector, all applicable per-version CRC regions, intentionally corrupted CRC (reported rather than accepted), absent banner, invalid offset/version/truncation, malformed UTF-16 and control characters. CLI integration tests verify `info`/`list --json` metadata, `banner.bin` extraction without clobbering, and safe errors. Icons are not rendered and CRCs are not cryptographic signatures.
+
+## Nintendo DS header integrity
+
+Nintendo DS header CRC uses CRC-16/IBM reflected 0xA001 with initial value 0xFFFF. Logo CRC covers `0xC0..0x15C`, stored at `0x15C`; the overall header CRC covers `0x00..0x15E`, stored at `0x15E`. The CRC implementation is shared with DS banner inspection and checked against the standard `123456789` vector (`0x4B37`). A purely synthetic zero-filled logo with an independently calculated two-byte suffix reaches the required `0xCF56` CRC without embedding Nintendo logo artwork. Library tests and black-box CLI tests cover independent logo/header failures, valid fixtures, truncated input, and corrupt banner CRC. `info` reports mismatches, whereas `verify` treats mismatches as failures; CRCs are not cryptographic authentication or a promise of full-ROM integrity.

@@ -2,7 +2,7 @@
 
 A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and save backups across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency. Ninforge is a standalone Nintendo-format toolkit: it does not import, target, or control any separate application.
 
-**Current status: early format inspection and safe single-file save backups.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and HFS0 support bounded entry inspection and extraction. XCI reads the root partition and one nested HFS0 level. DS supports ROM header sections, NitroFS files and localized cartridge banner titles, including read-only banner extraction and CRC-16 status. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
+**Current status: early format inspection and safe single-file save backups.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and HFS0 support bounded entry inspection and extraction. XCI reads the root partition and one nested HFS0 level. DS supports ROM header sections, NitroFS files and localized cartridge banner titles, including read-only banner extraction and CRC-16 checks of the logo, header and optional banner. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
 
 ## Build
 
@@ -38,6 +38,7 @@ ninforge titles inventory ./switch-metadata-bundles --json
 ninforge titles inventory ./switch-metadata-bundles --packages --hash --headers --json
 ninforge package audit-dir ./game.nsp ./readable-metadata --headers --json
 ninforge package audit ./game.nsp ./metadata.cnmt --nacp ./control.nacp --main-nso ./main.nso --json
+ninforge verify ./game.nds
 ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
 ninforge list ./game.nds
@@ -51,6 +52,7 @@ ninforge saves scan /drive/saves --json
 ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
+- Nintendo DS `info` also reports separately calculated logo CRC-16 (`0xC0..0x15B`) and cartridge header CRC-16 (`0x00..0x15D`) and their stored values. `verify game.nds` requires both to match; if a banner is present, its applicable banner CRCs must match as well. An invalid checksum is shown in `info` rather than concealed, while `verify` exits unsuccessfully. These CRCs are corruption checks, not Nintendo signatures or proof of authentic software.
 - Nintendo DS `info` also reports header-referenced banner version, size, up to eight localized UTF-16 titles, and CRC-16 checks for supported DS/DSi versions (1, 2, 3, 0x0103). `list` exposes `banner.bin` only when present; `extract` can copy it to an explicit destination without overwriting. A CRC failure is reported as such; it is not proof of authenticity or a structural error by itself.
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
 - `nca info` accepts an explicitly supplied readable/decrypted NCA2 or NCA3 header (or full archive with plaintext header). Reports content type, program ID, distribution, rights ID when present and bounded filesystem section layout. Raw retail NCA headers remain encrypted; Ninforge does not decrypt them.
