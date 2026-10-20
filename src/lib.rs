@@ -266,7 +266,10 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("media_id", format!("0x{:016X}", ncsd.media_id));
         report.add("media_unit_bytes", ncsd.media_unit_bytes);
         report.add("declared_media_size_bytes", ncsd.declared_media_bytes);
-        report.add("declared_media_size_matches_file", ncsd.declared_media_bytes == bytes);
+        report.add(
+            "declared_media_size_matches_file",
+            ncsd.declared_media_bytes == bytes,
+        );
         report.add("media_type", ncsd.media_type);
         report.add("partition_count", ncsd.partitions.len());
         report.add("signature_verified", false);

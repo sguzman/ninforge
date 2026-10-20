@@ -99,7 +99,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_ncsd_partitions(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "3ds" && action == "partitions" && flag == "--json" => {
+            if platform == "3ds" && action == "partitions" && flag == "--json" =>
+        {
             run_ncsd_partitions(file, true)?;
         }
         [platform, action, file] if platform == "wii" && action == "partition-check" => {
@@ -495,13 +496,14 @@ fn print_ncsd_partitions(report: &NcsdReport, json: bool) {
     if !json {
         println!(
             "NCSD media ID: 0x{:016X}, unit={} bytes, partitions={}",
-            report.media_id, report.media_unit_bytes, report.partitions.len()
+            report.media_id,
+            report.media_unit_bytes,
+            report.partitions.len()
         );
         for p in &report.partitions {
             println!(
                 "index={} offset={} size={} fs_type={} crypt_type={} id=0x{:016X}",
-                p.index, p.offset_bytes, p.size_bytes,
-                p.fs_type, p.crypt_type, p.partition_id
+                p.index, p.offset_bytes, p.size_bytes, p.fs_type, p.crypt_type, p.partition_id
             );
         }
         println!("NCSD signature and encrypted NCCH contents were not verified.");
@@ -509,12 +511,16 @@ fn print_ncsd_partitions(report: &NcsdReport, json: bool) {
     }
     let mut out = format!(
         r#"{{"format":"ncsd_partitions","media_id":"0x{:016X}","media_unit_bytes":{},"declared_media_bytes":{},"actual_file_bytes":{},"media_type":{},"signature_verified":false,"encrypted_content_verified":false,"partitions":["#,
-        report.media_id, report.media_unit_bytes,
-        report.declared_media_bytes, report.actual_file_bytes,
+        report.media_id,
+        report.media_unit_bytes,
+        report.declared_media_bytes,
+        report.actual_file_bytes,
         report.media_type,
     );
     for (index, part) in report.partitions.iter().enumerate() {
-        if index > 0 { out.push(','); }
+        if index > 0 {
+            out.push(',');
+        }
         write!(
             &mut out,
             r#"{{"index":{},"offset_bytes":{},"size_bytes":{},"fs_type":{},"crypt_type":{},"partition_id":"0x{:016X}"}}"#,

@@ -51,7 +51,8 @@ pub fn inspect_ncsd(header: &[u8], file_bytes: u64) -> io::Result<NcsdReport> {
     if declared_units == 0 {
         return Err(invalid("NCSD declared media size is zero"));
     }
-    let capacity = declared_units.checked_mul(media_unit)
+    let capacity = declared_units
+        .checked_mul(media_unit)
         .ok_or_else(|| invalid("NCSD declared size overflow"))?;
     if capacity < HEADER_SIZE as u64 || file_bytes < HEADER_SIZE as u64 {
         return Err(invalid("NCSD image smaller than required header"));
@@ -70,21 +71,30 @@ pub fn inspect_ncsd(header: &[u8], file_bytes: u64) -> io::Result<NcsdReport> {
         if offset == 0 || size == 0 {
             return Err(invalid("NCSD partition has only one of offset and size"));
         }
-        let begin = offset.checked_mul(media_unit)
+        let begin = offset
+            .checked_mul(media_unit)
             .ok_or_else(|| invalid("NCSD partition offset overflow"))?;
-        let count = size.checked_mul(media_unit)
+        let count = size
+            .checked_mul(media_unit)
             .ok_or_else(|| invalid("NCSD partition size overflow"))?;
-        let end = begin.checked_add(count)
+        let end = begin
+            .checked_add(count)
             .ok_or_else(|| invalid("NCSD partition end overflow"))?;
         if begin < HEADER_SIZE as u64 || end > capacity || end > file_bytes {
-            return Err(invalid("NCSD partition extends outside declared media or supplied file"));
+            return Err(invalid(
+                "NCSD partition extends outside declared media or supplied file",
+            ));
         }
         spans.push((begin, end));
         let part_id = u64::from_le_bytes(
-            header[0x190 + index * 8..0x198 + index * 8].try_into().unwrap()
+            header[0x190 + index * 8..0x198 + index * 8]
+                .try_into()
+                .unwrap(),
         );
         partitions.push(NcsdPartition {
-            index, offset_bytes: begin, size_bytes: count,
+            index,
+            offset_bytes: begin,
+            size_bytes: count,
             fs_type: header[0x110 + index],
             crypt_type: header[0x118 + index],
             partition_id: part_id,
@@ -95,9 +105,13 @@ pub fn inspect_ncsd(header: &[u8], file_bytes: u64) -> io::Result<NcsdReport> {
         return Err(invalid("NCSD partition spans overlap"));
     }
     Ok(NcsdReport {
-        media_id, declared_media_bytes: capacity,
-        actual_file_bytes: file_bytes, media_unit_bytes: media_unit,
-        media_type, partitions, signature_verified: false,
+        media_id,
+        declared_media_bytes: capacity,
+        actual_file_bytes: file_bytes,
+        media_unit_bytes: media_unit,
+        media_type,
+        partitions,
+        signature_verified: false,
     })
 }
 
@@ -141,24 +155,32 @@ mod tests {
     fn rejects_partition_outside_capacity_and_file() {
         let mut data = synthetic();
         data[0x120..0x124].copy_from_slice(&15u32.to_le_bytes());
-        assert!(inspect_ncsd(&data[..0x200], data.len() as u64).unwrap_err()
-            .to_string().contains("outside"));
+        assert!(inspect_ncsd(&data[..0x200], data.len() as u64)
+            .unwrap_err()
+            .to_string()
+            .contains("outside"));
         data = synthetic();
         data.truncate(0x800);
-        assert!(inspect_ncsd(&data[..0x200], data.len() as u64).unwrap_err()
-            .to_string().contains("outside"));
+        assert!(inspect_ncsd(&data[..0x200], data.len() as u64)
+            .unwrap_err()
+            .to_string()
+            .contains("outside"));
     }
 
     #[test]
     fn rejects_overlap_and_half_empty_entries() {
         let mut data = synthetic();
         data[0x128..0x12c].copy_from_slice(&3u32.to_le_bytes());
-        assert!(inspect_ncsd(&data[..0x200], data.len() as u64).unwrap_err()
-            .to_string().contains("overlap"));
+        assert!(inspect_ncsd(&data[..0x200], data.len() as u64)
+            .unwrap_err()
+            .to_string()
+            .contains("overlap"));
         data = synthetic();
         data[0x124..0x128].fill(0);
-        assert!(inspect_ncsd(&data[..0x200], data.len() as u64).unwrap_err()
-            .to_string().contains("only one"));
+        assert!(inspect_ncsd(&data[..0x200], data.len() as u64)
+            .unwrap_err()
+            .to_string()
+            .contains("only one"));
     }
 
     #[test]
