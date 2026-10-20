@@ -52,7 +52,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         [cmd, file] if cmd == "verify" => {
             let report = inspect(&mut File::open(file)?)?;
             require_sections(&report)?;
-            println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
+            if report.format == Format::NintendoDs {
+                verify_ds_checks(&report)?;
+                println!(
+                    "OK: {} region bounds and cartridge CRC-16 checks are valid (not a cryptographic signature)",
+                    report.entries.len()
+                );
+            } else {
+                println!("OK: {} header and {} region bounds are structurally valid (not a hash/signature check)", report.format, report.entries.len());
+            }
         }
         [cmd, sub, root] if cmd == "saves" && sub == "scan" => save_scan(Path::new(root), false)?,
         [cmd, sub, root, flag] if cmd == "saves" && sub == "scan" && flag == "--json" => {
@@ -137,6 +145,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         [] => usage(),
         _ => return Err("invalid arguments; run 'ninforge help'".into()),
+    }
+    Ok(())
+}
+
+/// Read-only integrity check of already computed NDS header/banner CRCs.
+/// Missing header fields never count as valid; an absent banner is permitted.
+fn verify_ds_checks(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
+    if report.format != Format::NintendoDs {
+        return Err("DS integrity checks require a recognized Nintendo DS cartridge".into());
+    }
+    for (field, label) in [
+        ("nds_logo_crc_valid", "logo CRC-16"),
+        ("nds_header_crc_valid", "header CRC-16"),
+    ] {
+        if !report.metadata.iter().any(|(key, value)| key == field && value == "true") {
+            return Err(format!("Nintendo DS {label} mismatch or unavailable").into());
+        }
+    }
+    if report.metadata.iter().any(|(key, value)| {
+        key == "banner_crc_all_valid" && value == "false"
+    }) {
+        return Err("Nintendo DS banner CRC-16 mismatch".into());
     }
     Ok(())
 }
