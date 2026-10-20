@@ -89,13 +89,21 @@ fn gamecube_info_list_verify_and_extract_are_read_only() {
         .arg("--json")
         .output()
         .unwrap();
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let info = String::from_utf8(info.stdout).unwrap();
     assert!(info.contains(r#""format":"GameCube disc""#));
     assert!(info.contains(r#""directory_count":"2""#));
     assert!(info.contains(r#""file_count":"2""#));
     let list = fixture.run(&["list"]);
-    assert!(list.status.success(), "{}", String::from_utf8_lossy(&list.stderr));
+    assert!(
+        list.status.success(),
+        "{}",
+        String::from_utf8_lossy(&list.stderr)
+    );
     let listing = String::from_utf8(list.stdout).unwrap();
     assert!(listing.contains("assets/hello.bin"));
     assert!(listing.contains("readme.txt"));
@@ -109,7 +117,11 @@ fn gamecube_info_list_verify_and_extract_are_read_only() {
         .arg(&output)
         .output()
         .unwrap();
-    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
     assert_eq!(fs::read(&output).unwrap(), b"hello");
     assert!(!Command::new(env!("CARGO_BIN_EXE_ninforge"))
         .arg("extract")
@@ -139,7 +151,7 @@ fn gamecube_rejects_truncated_and_out_of_range_tables() {
 #[test]
 fn gamecube_rejects_path_traversal_directory_cycles_and_invalid_extents() {
     let mut data = disc();
-    data[0x630..0x636].copy_from_slice(b"../bad\0");
+    data[0x630..0x637].copy_from_slice(b"../bad\0");
     // The string table begins at 0x630: first name is now a traversal path.
     assert!(!Fixture::new(&data).run(&["list"]).status.success());
 

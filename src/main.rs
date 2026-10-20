@@ -331,8 +331,14 @@ fn verify_ds_checks(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
 
 fn require_sections(report: &Report) -> Result<(), Box<dyn std::error::Error>> {
     match report.format {
-        Format::SwitchNsp | Format::SwitchHfs0 | Format::SwitchXci | Format::NintendoDs | Format::GameCube => Ok(()),
-        _ => Err("this operation supports Switch NSP/HFS0/XCI, Nintendo DS and GameCube files".into()),
+        Format::SwitchNsp
+        | Format::SwitchHfs0
+        | Format::SwitchXci
+        | Format::NintendoDs
+        | Format::GameCube => Ok(()),
+        _ => Err(
+            "this operation supports Switch NSP/HFS0/XCI, Nintendo DS and GameCube files".into(),
+        ),
     }
 }
 

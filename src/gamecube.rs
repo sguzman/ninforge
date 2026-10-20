@@ -49,7 +49,9 @@ pub fn inspect_gamecube<R: Read + Seek>(
     let fst_size = be32(&header[0x428..0x42c]);
     let fst_max_size = be32(&header[0x42c..0x430]);
     if fst_size < 12 || fst_size > MAX_FST_BYTES {
-        return Err(invalid("GameCube FST size is invalid or exceeds safety limit"));
+        return Err(invalid(
+            "GameCube FST size is invalid or exceeds safety limit",
+        ));
     }
     if fst_max_size != 0 && fst_max_size < fst_size {
         return Err(invalid("GameCube FST exceeds the advertised maximum size"));
@@ -61,10 +63,12 @@ pub fn inspect_gamecube<R: Read + Seek>(
     if fst_start < HEADER_BYTES as u64 || fst_end > file_bytes {
         return Err(invalid("GameCube FST extends outside the disc image"));
     }
-    if dol_offset != 0 && (u64::from(dol_offset) < HEADER_BYTES as u64
-        || u64::from(dol_offset) >= file_bytes)
+    if dol_offset != 0
+        && (u64::from(dol_offset) < HEADER_BYTES as u64 || u64::from(dol_offset) >= file_bytes)
     {
-        return Err(invalid("GameCube main DOL offset is outside the disc image"));
+        return Err(invalid(
+            "GameCube main DOL offset is outside the disc image",
+        ));
     }
 
     reader.seek(SeekFrom::Start(fst_start))?;
@@ -104,9 +108,7 @@ pub fn inspect_gamecube<R: Read + Seek>(
         if item[0] > 1 {
             return Err(invalid("GameCube FST entry has an unsupported type"));
         }
-        let name_offset = ((item[1] as usize) << 16)
-            | ((item[2] as usize) << 8)
-            | item[3] as usize;
+        let name_offset = ((item[1] as usize) << 16) | ((item[2] as usize) << 8) | item[3] as usize;
         let tail = strings
             .get(name_offset..)
             .ok_or_else(|| invalid("GameCube FST filename offset is invalid"))?;
@@ -134,7 +136,9 @@ pub fn inspect_gamecube<R: Read + Seek>(
             format!("{parent_path}/{name}")
         };
         if path.len() > MAX_PATH_BYTES || !seen.insert(path.clone()) {
-            return Err(invalid("GameCube FST contains a duplicate or overlong path"));
+            return Err(invalid(
+                "GameCube FST contains a duplicate or overlong path",
+            ));
         }
 
         let field = be32(&item[4..8]);
@@ -144,7 +148,9 @@ pub fn inspect_gamecube<R: Read + Seek>(
                 || (last as usize) <= index
                 || (last as usize) > *parent_end
             {
-                return Err(invalid("GameCube FST directory parent or subtree is invalid"));
+                return Err(invalid(
+                    "GameCube FST directory parent or subtree is invalid",
+                ));
             }
             directories += 1;
             stack.push((index, last as usize, path));
@@ -155,7 +161,9 @@ pub fn inspect_gamecube<R: Read + Seek>(
                 .checked_add(size)
                 .ok_or_else(|| invalid("GameCube FST file extent overflow"))?;
             if end > file_bytes || (size != 0 && offset < HEADER_BYTES as u64) {
-                return Err(invalid("GameCube FST file extends outside usable image bounds"));
+                return Err(invalid(
+                    "GameCube FST file extends outside usable image bounds",
+                ));
             }
             if size != 0 && offset < fst_end && end > fst_start {
                 return Err(invalid("GameCube FST file overlaps the filesystem table"));
