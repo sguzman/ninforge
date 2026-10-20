@@ -16,6 +16,7 @@ pub mod nca;
 pub mod ncch;
 pub mod ncsd;
 pub mod ncsd_ncch;
+pub mod nes;
 mod nds;
 mod nds_banner;
 mod nds_crc;
@@ -169,16 +170,26 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("entry_count", report.entries.len());
     } else if head.starts_with(b"NES\x1a") && head.len() >= 16 {
         report.format = Format::Nes;
-        let nes2 = head[7] & 0x0c == 0x08;
-        report.add("header", if nes2 { "NES 2.0" } else { "iNES" });
-        if !nes2 {
-            report.add("prg_rom_kib", u32::from(head[4]) * 16);
-            report.add("chr_rom_kib", u32::from(head[5]) * 8);
-            report.add(
-                "mapper",
-                (u16::from(head[7] & 0xf0)) | u16::from(head[6] >> 4),
-            );
-        }
+        let nes = nes::inspect_nes(&head, bytes)?;
+        report.add("header", if nes.nes2 { "NES 2.0" } else { "iNES" });
+        report.add("mapper", nes.mapper);
+        report.add("mapper_high_bits_ambiguous", nes.mapper_high_bits_ambiguous);
+        if let Some(value) = nes.submapper { report.add("submapper", value); }
+        report.add("prg_rom_bytes", nes.prg_rom_bytes);
+        report.add("chr_rom_bytes", nes.chr_rom_bytes);
+        report.add("trainer_present", nes.trainer_present);
+        report.add("mirroring", nes.mirroring);
+        report.add("battery_flag", nes.battery_flag);
+        report.add("console_type", nes.console_type);
+        report.add("declared_regions_fit_file", nes.declared_regions_fit_file);
+        report.add("minimum_file_bytes", nes.minimum_file_bytes);
+        if let Some(value) = nes.prg_ram_bytes { report.add("prg_ram_bytes", value); }
+        if let Some(value) = nes.prg_nvram_bytes { report.add("prg_nvram_bytes", value); }
+        if let Some(value) = nes.chr_ram_bytes { report.add("chr_ram_bytes", value); }
+        if let Some(value) = nes.chr_nvram_bytes { report.add("chr_nvram_bytes", value); }
+        if let Some(value) = nes.timing_mode { report.add("timing_mode", value); }
+        if let Some(value) = nes.misc_rom_count { report.add("misc_rom_count", value); }
+        report.add("content_checksum_available", false);
     } else if head.starts_with(b"NSO0") && head.len() >= 0x100 {
         report.format = Format::SwitchNso;
         let id = &head[0x40..0x60];
