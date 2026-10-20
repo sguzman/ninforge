@@ -53,7 +53,7 @@ fn signed_header_base(signature_type: u32) -> Option<u64> {
     match signature_type {
         0x0001_0000 | 0x0001_0003 => Some(0x240), // RSA4096
         0x0001_0001 | 0x0001_0004 => Some(0x140), // RSA2048
-        0x0001_0002 | 0x0001_0005 => Some(0x80), // ECDSA
+        0x0001_0002 | 0x0001_0005 => Some(0x80),  // ECDSA
         _ => None,
     }
 }
@@ -63,9 +63,15 @@ fn signed_header_base(signature_type: u32) -> Option<u64> {
 /// are reported as unselected, not errors.
 pub fn inspect_cia_tmd<R: Read + Seek>(reader: &mut R) -> io::Result<CiaTmdReport> {
     let outer = cia::inspect_cia(reader)?;
-    let tmd = outer.sections.iter().find(|section| section.name == "tmd")
+    let tmd = outer
+        .sections
+        .iter()
+        .find(|section| section.name == "tmd")
         .ok_or_else(|| bad("CIA TMD section missing"))?;
-    let content = outer.sections.iter().find(|section| section.name == "content")
+    let content = outer
+        .sections
+        .iter()
+        .find(|section| section.name == "content")
         .ok_or_else(|| bad("CIA content section missing"))?;
     reader.seek(SeekFrom::Start(tmd.offset_bytes))?;
     let mut signature_type_raw = [0u8; 4];
@@ -83,7 +89,9 @@ pub fn inspect_cia_tmd<R: Read + Seek>(reader: &mut R) -> io::Result<CiaTmdRepor
     let title_version = be16(&head[0x9c..0x9e]);
     let count = usize::from(be16(&head[0x9e..0xa0]));
     if count == 0 || count > MAX_TMD_RECORDS {
-        return Err(bad("CIA TMD record count is empty or exceeds inspection cap"));
+        return Err(bad(
+            "CIA TMD record count is empty or exceeds inspection cap",
+        ));
     }
     let needed = base
         .checked_add(0x9c4)
@@ -119,20 +127,29 @@ pub fn inspect_cia_tmd<R: Read + Seek>(reader: &mut R) -> io::Result<CiaTmdRepor
         let selected = bitmap[at / 8] & (0x80 >> (at % 8)) != 0;
         if selected {
             selected_count += 1;
-            selected_bytes = selected_bytes.checked_add(size)
+            selected_bytes = selected_bytes
+                .checked_add(size)
                 .ok_or_else(|| bad("CIA TMD selected content size overflow"))?;
         }
         content_records.push(CiaTmdContent {
-            content_id: id, content_index: index, content_type: kind,
-            declared_size_bytes: size, selected_by_cia_bitmap: selected,
+            content_id: id,
+            content_index: index,
+            content_type: kind,
+            declared_size_bytes: size,
+            selected_by_cia_bitmap: selected,
         });
     }
     if selected_bytes > content.size_bytes {
-        return Err(bad("CIA selected TMD content exceeds archive content section"));
+        return Err(bad(
+            "CIA selected TMD content exceeds archive content section",
+        ));
     }
     Ok(CiaTmdReport {
-        title_id, title_version, signature_type,
-        tmd_record_count: count, bitmap_bit_count: bitmap_count,
+        title_id,
+        title_version,
+        signature_type,
+        tmd_record_count: count,
+        bitmap_bit_count: bitmap_count,
         selected_record_count: selected_count,
         bitmap_entries_without_tmd_record: bitmap_count - selected_count as u32,
         unselected_tmd_records: count - selected_count,
@@ -161,7 +178,12 @@ mod tests {
         raw[24..32].copy_from_slice(&content.to_le_bytes());
         raw[0x20] = if selected { 0x80 } else { 0x40 };
         let mut offset = 0x2040usize;
-        for size in [cert as usize, ticket as usize, tmd as usize, content as usize] {
+        for size in [
+            cert as usize,
+            ticket as usize,
+            tmd as usize,
+            content as usize,
+        ] {
             raw.resize(offset + size, 0);
             offset = (offset + size + 63) & !63;
         }
@@ -209,12 +231,16 @@ mod tests {
         let tmd = 0x2040 + 0x80 + 0x100;
         let chunk = tmd + 0x140 + 0x9c4;
         raw[chunk + 8..chunk + 16].copy_from_slice(&0x500u64.to_be_bytes());
-        assert!(inspect_cia_tmd(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("exceeds archive"));
+        assert!(inspect_cia_tmd(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds archive"));
         let mut raw = fixture(true);
         raw[tmd..tmd + 4].fill(0);
-        assert!(inspect_cia_tmd(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("signature type unsupported"));
+        assert!(inspect_cia_tmd(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("signature type unsupported"));
     }
 
     #[test]
@@ -223,7 +249,9 @@ mod tests {
         let tmd = 0x2040 + 0x80 + 0x100;
         let count = tmd + 0x140 + 0x9e;
         raw[count..count + 2].copy_from_slice(&2u16.to_be_bytes());
-        assert!(inspect_cia_tmd(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("table truncated"));
+        assert!(inspect_cia_tmd(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("table truncated"));
     }
 }

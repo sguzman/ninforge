@@ -109,7 +109,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_cia_tmd_audit(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "3ds" && action == "cia-audit" && flag == "--json" => {
+            if platform == "3ds" && action == "cia-audit" && flag == "--json" =>
+        {
             run_cia_tmd_audit(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "crosscheck" => {
@@ -602,8 +603,10 @@ fn print_cia_tmd_audit(report: &CiaTmdReport, json: bool) {
         for record in &report.records {
             println!(
                 "content_id=0x{:08X} index={} flags=0x{:04X} size={} selected={}",
-                record.content_id, record.content_index,
-                record.content_type, record.declared_size_bytes,
+                record.content_id,
+                record.content_index,
+                record.content_type,
+                record.declared_size_bytes,
                 record.selected_by_cia_bitmap
             );
         }
@@ -612,14 +615,21 @@ fn print_cia_tmd_audit(report: &CiaTmdReport, json: bool) {
     }
     let mut out = format!(
         r#"{{"format":"cia_tmd_audit","title_id":"0x{:016X}","title_version":{},"signature_type":{},"record_count":{},"bitmap_bit_count":{},"selected_record_count":{},"unselected_tmd_records":{},"bitmap_entries_without_tmd_record":{},"selected_content_declared_bytes":{},"cia_content_region_bytes":{},"cryptographic_integrity_verified":false,"records":["#,
-        report.title_id, report.title_version, report.signature_type,
-        report.tmd_record_count, report.bitmap_bit_count,
-        report.selected_record_count, report.unselected_tmd_records,
+        report.title_id,
+        report.title_version,
+        report.signature_type,
+        report.tmd_record_count,
+        report.bitmap_bit_count,
+        report.selected_record_count,
+        report.unselected_tmd_records,
         report.bitmap_entries_without_tmd_record,
-        report.selected_content_declared_bytes, report.cia_content_region_bytes
+        report.selected_content_declared_bytes,
+        report.cia_content_region_bytes
     );
     for (i, record) in report.records.iter().enumerate() {
-        if i > 0 { out.push(','); }
+        if i > 0 {
+            out.push(',');
+        }
         write!(
             &mut out,
             r#"{{"content_id":"0x{:08X}","index":{},"type_flags":{},"size_bytes":{},"selected":{}}}"#,
