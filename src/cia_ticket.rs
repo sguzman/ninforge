@@ -38,7 +38,10 @@ pub struct CiaTicketReport {
 pub fn inspect_cia_ticket<R: Read + Seek>(reader: &mut R) -> io::Result<CiaTicketReport> {
     let outer = cia::inspect_cia(reader)?;
     let metadata = cia_tmd::inspect_cia_tmd(reader)?;
-    let ticket = outer.sections.iter().find(|section| section.name == "ticket")
+    let ticket = outer
+        .sections
+        .iter()
+        .find(|section| section.name == "ticket")
         .ok_or_else(|| bad("CIA ticket section missing"))?;
     reader.seek(SeekFrom::Start(ticket.offset_bytes))?;
     let mut sig = [0u8; 4];
@@ -59,13 +62,16 @@ pub fn inspect_cia_ticket<R: Read + Seek>(reader: &mut R) -> io::Result<CiaTicke
     let title_id = be64(&head[0x9c..0xa4]);
     let title_version = be16(&head[0xa6..0xa8]);
     Ok(CiaTicketReport {
-        signature_type, ticket_data_version: version,
-        ticket_title_id: title_id, tmd_title_id: metadata.title_id,
+        signature_type,
+        ticket_data_version: version,
+        ticket_title_id: title_id,
+        tmd_title_id: metadata.title_id,
         title_id_matches: title_id == metadata.title_id,
         ticket_title_version: title_version,
         tmd_title_version: metadata.title_version,
         title_version_matches: title_version == metadata.title_version,
-        ticket_signature_verified: false, tmd_signature_verified: false,
+        ticket_signature_verified: false,
+        tmd_signature_verified: false,
         titlekey_decrypted: false,
     })
 }
@@ -98,17 +104,13 @@ mod tests {
         raw[ticket_data + 0x7c] = 1;
         raw[ticket_data + 0x9c..ticket_data + 0xa4]
             .copy_from_slice(&0x4000000123456u64.to_be_bytes());
-        raw[ticket_data + 0xa6..ticket_data + 0xa8]
-            .copy_from_slice(&8u16.to_be_bytes());
+        raw[ticket_data + 0xa6..ticket_data + 0xa8].copy_from_slice(&8u16.to_be_bytes());
         let tmd_at = 0x2040 + cert + ((ticket + 63) & !63);
         raw[tmd_at..tmd_at + 4].copy_from_slice(&0x0001_0004u32.to_be_bytes());
         let tmd_data = tmd_at + 0x140;
-        raw[tmd_data + 0x4c..tmd_data + 0x54]
-            .copy_from_slice(&0x4000000123456u64.to_be_bytes());
-        raw[tmd_data + 0x9c..tmd_data + 0x9e]
-            .copy_from_slice(&8u16.to_be_bytes());
-        raw[tmd_data + 0x9e..tmd_data + 0xa0]
-            .copy_from_slice(&1u16.to_be_bytes());
+        raw[tmd_data + 0x4c..tmd_data + 0x54].copy_from_slice(&0x4000000123456u64.to_be_bytes());
+        raw[tmd_data + 0x9c..tmd_data + 0x9e].copy_from_slice(&8u16.to_be_bytes());
+        raw[tmd_data + 0x9e..tmd_data + 0xa0].copy_from_slice(&1u16.to_be_bytes());
         let chunk = tmd_data + 0x9c4;
         raw[chunk..chunk + 4].copy_from_slice(&0x1234u32.to_be_bytes());
         raw[chunk + 8..chunk + 16].copy_from_slice(&(content as u64).to_be_bytes());
@@ -132,8 +134,7 @@ mod tests {
     fn mismatched_title_id_and_version_remain_observable() {
         let mut raw = fixture();
         let data = 0x2040 + 0x80 + 0x140;
-        raw[data + 0x9c..data + 0xa4]
-            .copy_from_slice(&0x4000000ABCDEFu64.to_be_bytes());
+        raw[data + 0x9c..data + 0xa4].copy_from_slice(&0x4000000ABCDEFu64.to_be_bytes());
         raw[data + 0xa6..data + 0xa8].copy_from_slice(&9u16.to_be_bytes());
         let got = inspect_cia_ticket(&mut Cursor::new(raw)).unwrap();
         assert!(!got.title_id_matches);
@@ -144,12 +145,16 @@ mod tests {
     fn rejects_ticket_version_zero_and_unknown_signature_type() {
         let mut raw = fixture();
         raw[0x2040 + 0x80 + 0x140 + 0x7c] = 0;
-        assert!(inspect_cia_ticket(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("v1"));
+        assert!(inspect_cia_ticket(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("v1"));
         let mut raw = fixture();
         raw[0x2040 + 0x80..0x2040 + 0x84].fill(0);
-        assert!(inspect_cia_ticket(&mut Cursor::new(raw)).unwrap_err()
-            .to_string().contains("signature type unsupported"));
+        assert!(inspect_cia_ticket(&mut Cursor::new(raw))
+            .unwrap_err()
+            .to_string()
+            .contains("signature type unsupported"));
     }
 
     #[test]

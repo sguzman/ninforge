@@ -4,8 +4,8 @@
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
 pub mod cia;
-pub mod cia_tmd;
 pub mod cia_ticket;
+pub mod cia_tmd;
 pub mod cnmt;
 pub mod gb;
 pub mod gba;
