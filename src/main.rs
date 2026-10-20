@@ -10,7 +10,7 @@ use ninforge::package::{
     HashStatus, HeaderStatus, MatchStatus, PackageAudit,
 };
 use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
-use ninforge::wii::{inspect_wii_disc, validate_wbfs_maps, WbfsMapReport, WiiDiscReport};
+use ninforge::wii::{inspect_wii_disc, inspect_wii_partition_headers, validate_wbfs_maps, WbfsMapReport, WiiDiscReport, WiiPartitionHeader};
 use ninforge::{extract_entry, inspect, saves, Entry, Format, Report};
 use std::env;
 use std::fmt::Write as _;
@@ -83,6 +83,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "wii" && action == "partition-check" => {
+            run_wii_partition_check(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "wii" && action == "partition-check" && flag == "--json" => {
+            run_wii_partition_check(file, true)?;
         }
         [platform, action, file] if platform == "wii" && action == "wbfs-check" => {
             run_wbfs_check(file, false)?;
@@ -314,6 +321,7 @@ Usage:
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge wii partitions <iso> [--json]  Index Wii ISO partition table (not decrypt)
+  ninforge wii partition-check <iso> [--json]  Check Wii partition metadata extents
   ninforge wii wbfs-check <file> [--json]  Validate WBFS disc records and block maps
   ninforge extract <file> <entry> <out>    Extract one entry/section; no overwrite
   ninforge scan <directory> [--json]       Recursive recognized-file inventory
@@ -383,6 +391,58 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
 
 /// Wii ISO partition positions are addresses; their sizes and encrypted
 /// contents have not been validated and are never exposed to extraction.
+/// Strict opt-in validation of the plaintext ticket-adjacent offsets only.
+/// Does not read or authenticate TMD/certificate bytes, H3 hashes, or game data.
+fn run_wii_partition_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = inspect(&mut file)?;
+    if report.format != Format::Wii {
+        return Err("wii partition-check requires a raw Wii ISO, not WBFS".into());
+    }
+    let partitions = inspect_wii_partition_headers(&mut file, report.bytes)?;
+    print_wii_partition_checks(&partitions, json);
+    Ok(())
+}
+
+fn print_wii_partition_checks(partitions: &[WiiPartitionHeader], json: bool) {
+    if !json {
+        println!("Checked {} Wii partition header layouts", partitions.len());
+        for part in partitions {
+            println!(
+                "group={} index={} base={} type={} tmd={}:{} cert={:?}:{} h3={:?} data={}:{}",
+                part.group, part.index, part.partition_offset_bytes,
+                part.partition_type, part.tmd_offset_bytes, part.tmd_size_bytes,
+                part.cert_offset_bytes, part.cert_size_bytes, part.h3_offset_bytes,
+                part.data_offset_bytes, part.data_size_bytes
+            );
+        }
+        println!("Only byte-range bounds were checked; signatures and encrypted data are unverified.");
+        return;
+    }
+    let mut out = format!(
+        r#"{{"format":"wii_partition_header_check","partition_count":{},"signature_verified":false,"encrypted_content_verified":false,"partitions":["#,
+        partitions.len()
+    );
+    for (index, part) in partitions.iter().enumerate() {
+        if index > 0 { out.push(','); }
+        let cert = part.cert_offset_bytes.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        let h3 = part.h3_offset_bytes.map_or_else(
+            || "null".to_owned(), |value| value.to_string()
+        );
+        write!(&mut out,
+            r#"{{"group":{},"index":{},"partition_offset_bytes":{},"type":{},"tmd_offset_bytes":{},"tmd_size_bytes":{},"cert_offset_bytes":{},"cert_size_bytes":{},"h3_offset_bytes":{},"data_offset_bytes":{},"data_size_bytes":{}}}"#,
+            part.group, part.index, part.partition_offset_bytes,
+            part.partition_type, part.tmd_offset_bytes, part.tmd_size_bytes,
+            cert, part.cert_size_bytes, h3,
+            part.data_offset_bytes, part.data_size_bytes
+        ).expect("JSON formatting");
+    }
+    out.push_str("]}");
+    println!("{out}");
+}
+
 fn run_wii_partitions(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let report = inspect(&mut file)?;
