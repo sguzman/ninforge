@@ -20,7 +20,8 @@ fn u64le(slice: &[u8]) -> u64 {
     u64::from_le_bytes(slice.try_into().unwrap())
 }
 fn align64(value: u64) -> io::Result<u64> {
-    value.checked_add(ALIGNMENT - 1)
+    value
+        .checked_add(ALIGNMENT - 1)
         .map(|v| v & !(ALIGNMENT - 1))
         .ok_or_else(|| bad("CIA section alignment overflow"))
 }
@@ -86,7 +87,9 @@ pub fn inspect_cia<R: Read + Seek>(input: &mut R) -> io::Result<CiaReport> {
     let meta = u64::from(u32le(&head[20..24]));
     let content = u64le(&head[24..32]);
     if cert == 0 || ticket == 0 || tmd == 0 || content == 0 {
-        return Err(bad("CIA archive requires nonempty cert, ticket, TMD and content"));
+        return Err(bad(
+            "CIA archive requires nonempty cert, ticket, TMD and content",
+        ));
     }
     let bitmap = &head[0x20..0x2020];
     let set_bits: u32 = bitmap.iter().map(|b| b.count_ones()).sum();
@@ -106,12 +109,17 @@ pub fn inspect_cia<R: Read + Seek>(input: &mut R) -> io::Result<CiaReport> {
         if bytes == 0 {
             continue;
         }
-        let end = cursor.checked_add(bytes)
+        let end = cursor
+            .checked_add(bytes)
             .ok_or_else(|| bad("CIA section extent overflow"))?;
         if end > length {
             return Err(bad("CIA section extends outside supplied file"));
         }
-        sections.push(CiaSection { name, offset_bytes: cursor, size_bytes: bytes });
+        sections.push(CiaSection {
+            name,
+            offset_bytes: cursor,
+            size_bytes: bytes,
+        });
         cursor = align64(end)?;
     }
     // The final aligned padding may be absent for a trailing section.
@@ -122,8 +130,12 @@ pub fn inspect_cia<R: Read + Seek>(input: &mut R) -> io::Result<CiaReport> {
     }
     // Intermediate sections already required their next aligned starts.
     Ok(CiaReport {
-        archive_type, archive_version: version, header_size_bytes: size,
-        file_bytes: length, content_index_set_bits: set_bits, sections,
+        archive_type,
+        archive_version: version,
+        header_size_bytes: size,
+        file_bytes: length,
+        content_index_set_bits: set_bits,
+        sections,
         file_trailing_bytes: length - last_end,
         cryptographic_integrity_verified: false,
     })
@@ -151,7 +163,9 @@ mod tests {
         raw[0x21] = 0x01;
         let mut cursor = 0x2040u64;
         for size in [cert as u64, ticket as u64, tmd as u64, content, meta as u64] {
-            if size == 0 { continue; }
+            if size == 0 {
+                continue;
+            }
             let end = cursor + size;
             raw.resize(end as usize, 0);
             cursor = (end + 63) & !63;
@@ -186,8 +200,12 @@ mod tests {
     #[test]
     fn rejects_bad_header_and_empty_bitmap() {
         let mut raw = fixture(true);
-        raw[0x20] = 0; raw[0x21] = 0;
-        assert!(inspect_cia(&mut Cursor::new(&raw)).unwrap_err().to_string().contains("bitmap"));
+        raw[0x20] = 0;
+        raw[0x21] = 0;
+        assert!(inspect_cia(&mut Cursor::new(&raw))
+            .unwrap_err()
+            .to_string()
+            .contains("bitmap"));
         raw = fixture(false);
         raw[..4].copy_from_slice(&0x2021u32.to_le_bytes());
         assert!(inspect_cia(&mut Cursor::new(&raw)).is_err());

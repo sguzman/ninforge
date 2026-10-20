@@ -1,7 +1,7 @@
 //! Standalone Ninforge binary. No external runtime service dependencies.
 
-use ninforge::cnmt::inspect_cnmt;
 use ninforge::cia::{inspect_cia, CiaReport};
+use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
@@ -107,7 +107,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             run_cia_sections(file, false)?;
         }
         [platform, action, file, flag]
-            if platform == "3ds" && action == "cia-sections" && flag == "--json" => {
+            if platform == "3ds" && action == "cia-sections" && flag == "--json" =>
+        {
             run_cia_sections(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "ncch-regions" => {
@@ -517,26 +518,40 @@ fn print_cia_sections(report: &CiaReport, json: bool) {
     if !json {
         println!(
             "3DS CIA: header={} bytes; {} sections; bitmap={} set bits",
-            report.header_size_bytes, report.sections.len(), report.content_index_set_bits
+            report.header_size_bytes,
+            report.sections.len(),
+            report.content_index_set_bits
         );
         for section in &report.sections {
-            println!("{}: offset={} size={}", section.name, section.offset_bytes, section.size_bytes);
+            println!(
+                "{}: offset={} size={}",
+                section.name, section.offset_bytes, section.size_bytes
+            );
         }
         println!("Ticket, TMD, content hashes, and signatures are NOT verified.");
         return;
     }
     let mut out = format!(
         r#"{{"format":"cia_sections","header_size_bytes":{},"archive_type":{},"archive_version":{},"content_index_set_bits":{},"file_bytes":{},"trailing_bytes":{},"cryptographic_integrity_verified":false,"sections":["#,
-        report.header_size_bytes, report.archive_type, report.archive_version,
-        report.content_index_set_bits, report.file_bytes, report.file_trailing_bytes
+        report.header_size_bytes,
+        report.archive_type,
+        report.archive_version,
+        report.content_index_set_bits,
+        report.file_bytes,
+        report.file_trailing_bytes
     );
     for (index, section) in report.sections.iter().enumerate() {
-        if index != 0 { out.push(','); }
+        if index != 0 {
+            out.push(',');
+        }
         write!(
             &mut out,
             r#"{{"name":{},"offset_bytes":{},"size_bytes":{}}}"#,
-            json_string(section.name), section.offset_bytes, section.size_bytes
-        ).expect("format CIA section JSON");
+            json_string(section.name),
+            section.offset_bytes,
+            section.size_bytes
+        )
+        .expect("format CIA section JSON");
     }
     out.push_str("]}");
     println!("{out}");

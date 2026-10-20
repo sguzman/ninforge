@@ -3,8 +3,8 @@
 //! Detection is based on content signatures and conservative header checks, not
 //! the filename extension. No decryption keys or commercial ROMs are bundled.
 
-pub mod cnmt;
 pub mod cia;
+pub mod cnmt;
 pub mod gb;
 pub mod gba;
 mod hfs0;
