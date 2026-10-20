@@ -136,3 +136,41 @@ fn defective_dsv_and_nogba_fail_cleanly_without_modifying_bytes() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("No$GBA"));
     assert_eq!(fs::read(&nogba_file.file).unwrap(), bad);
 }
+
+
+fn action_replay(payload_len: usize) -> Vec<u8> {
+    let mut file = vec![0u8; 500 + payload_len];
+    file[..8].copy_from_slice(b"ARDS0001");
+    file[500..].fill(0x5A);
+    file
+}
+
+#[test]
+fn action_replay_header_identified_by_magic_without_game_guessing() {
+    let bytes = action_replay(32768);
+    let file = Fixture::new(&bytes, "does-not-matter.sav");
+    let output = file.run(true);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains(r#""format":"action_replay_ds""#));
+    assert!(text.contains(r#""wrapper_size_bytes":"500""#));
+    assert!(text.contains(r#""payload_offset":"500""#));
+    assert!(text.contains(r#""payload_size_bytes":"32768""#));
+    assert!(text.contains(r#""metadata_not_decoded":"true""#));
+    assert!(text.contains(r#""game_association_verified":"false""#));
+    assert_eq!(fs::read(&file.file).unwrap(), bytes);
+}
+
+#[test]
+fn action_replay_truncated_file_is_rejected_without_output() {
+    for size in [8, 499, 500] {
+        let mut bytes = vec![0u8; size];
+        bytes[..8].copy_from_slice(b"ARDS0001");
+        let file = Fixture::new(&bytes, "truncated.duc");
+        let result = file.run(true);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("Action Replay DS"));
+        assert!(result.stdout.is_empty());
+        assert_eq!(fs::read(&file.file).unwrap(), bytes);
+    }
+}
