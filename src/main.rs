@@ -5,6 +5,7 @@ use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
 use ninforge::nca::inspect_decrypted_nca;
 use ninforge::ncsd::{inspect_ncsd, NcsdReport};
+use ninforge::ncch::{inspect_ncch, NcchReport};
 use ninforge::nds_save::{inspect_ds_save, DsSaveReport};
 use ninforge::package::{
     audit_switch_package, audit_switch_package_with_hashes, audit_switch_package_with_headers,
@@ -72,6 +73,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Format::Nintendo3dsCartridge => {
                     println!("OK: 3DS NCSD partition byte ranges are bounded (NCSD signature and encrypted NCCH contents NOT verified)");
                 }
+                Format::Nintendo3dsNcch => {
+                    println!("OK: 3DS NCCH region offsets and sizes are bounded (RSA signature, encryption and content hashes NOT verified)");
+                }
                 Format::NintendoDs => {
                     require_sections(&report)?;
                     verify_ds_checks(&report)?;
@@ -94,6 +98,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "3ds" && action == "ncch-regions" => {
+            run_ncch_regions(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "3ds" && action == "ncch-regions" && flag == "--json" => {
+            run_ncch_regions(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "partitions" => {
             run_ncsd_partitions(file, false)?;
@@ -341,6 +352,7 @@ Usage:
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge 3ds partitions <ncsd> [--json]  Inspect NCSD media-unit partition table
+  ninforge 3ds ncch-regions <ncch> [--json]  Inspect NCCH content spans (not decrypt)
   ninforge wii partitions <iso> [--json]  Index Wii ISO partition table (not decrypt)
   ninforge wii partition-check <iso> [--json]  Check Wii partition metadata extents
   ninforge wii wbfs-check <file> [--json]  Validate WBFS disc records and block maps
@@ -477,6 +489,54 @@ fn print_wii_partition_checks(partitions: &[WiiPartitionHeader], json: bool) {
 
 /// Deliberately not an extraction interface: NCSD partition metadata cannot
 /// authenticate an encrypted NCCH payload or the signed cartridge header.
+/// NCCH content ranges are unauthenticated and do not imply that partition
+/// data is readable, decrypted, or valid.
+fn run_ncch_regions(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = inspect(&mut file)?;
+    if report.format != Format::Nintendo3dsNcch {
+        return Err("3ds ncch-regions requires a standalone NCCH image".into());
+    }
+    use std::io::{Read as _, Seek as _};
+    let mut header = [0u8; 0x200];
+    file.rewind()?;
+    file.read_exact(&mut header)?;
+    let regions = inspect_ncch(&header, report.bytes)?;
+    print_ncch_regions(&regions, json);
+    Ok(())
+}
+
+fn print_ncch_regions(info: &NcchReport, json: bool) {
+    if !json {
+        println!(
+            "NCCH {} program=0x{:016X} partition=0x{:016X}",
+            info.product_code, info.program_id, info.partition_id
+        );
+        for region in &info.regions {
+            println!(
+                "region={} offset={} size={}",
+                region.name, region.offset_bytes, region.size_bytes
+            );
+        }
+        println!("Signatures, hashes, and encrypted contents are unverified.");
+        return;
+    }
+    let mut out = format!(
+        r#"{{"format":"ncch_regions","program_id":"0x{:016X}","partition_id":"0x{:016X}","product_code":{},"media_unit_bytes":{},"declared_content_bytes":{},"signature_verified":false,"cryptographic_integrity_verified":false,"regions":["#,
+        info.program_id, info.partition_id, json_string(&info.product_code),
+        info.media_unit_bytes, info.declared_content_bytes
+    );
+    for (index, region) in info.regions.iter().enumerate() {
+        if index > 0 { out.push(','); }
+        write!(&mut out,
+            r#"{{"name":{},"offset_bytes":{},"size_bytes":{}}}"#,
+            json_string(region.name), region.offset_bytes, region.size_bytes
+        ).expect("JSON formatting");
+    }
+    out.push_str("]}");
+    println!("{out}");
+}
+
 fn run_ncsd_partitions(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let report = inspect(&mut file)?;
