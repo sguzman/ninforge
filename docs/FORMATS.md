@@ -23,7 +23,8 @@
 | GB/GBC | Cartridge logo (header checksum may be damaged) | Title, CGB/SGB flags, mapper, ROM/RAM capacity codes, licensee, header checksum | No | No | Explicit `verify` streams the ROM to check declared file size, header checksum and additive global checksum (not cryptographic) |
 | N64 | Three standard byte-order magics | Byte-order-normalized title/game code/country, version, entry point, stored CRC1/CRC2 | No | No | Header recognition only; CIC-dependent CRCs and ROM data remain unverified |
 | SNES / Super Famicom | Explicit `snes header` (no universal magic) | Candidate LoROM/HiROM/ExHiROM titles, mapper claims, capacities, reset vector and checksum/complement pair | Header candidates only | No | Candidate evidence only; no full-ROM checksum or authenticity |
-| Wii U / Switch 2 | Not yet implemented | No | No | No | No |
+| Wii U WUX | `WUX0` + fixed second marker | Declared logical capacity, sector geometry and stored-sector count | No partition files; optional `wiiu wux-check` maps sector references | No | Opt-in streaming sector-index bounds checks only, not content integrity |
+| Wii U WUD / Switch 2 | Not yet implemented | No | No | No | No |
 
 ## Notes
 

@@ -17,6 +17,7 @@ use ninforge::package::{
 };
 use ninforge::snes::{inspect_snes_headers, SnesHeaderReport};
 use ninforge::title_inventory::{inventory_metadata_root_with_packages, TitleInventory};
+use ninforge::wiiu::{inspect_wux, validate_wux_index};
 use ninforge::wii::{
     inspect_wii_disc, inspect_wii_partition_headers, validate_wbfs_maps, WbfsMapReport,
     WiiDiscReport, WiiPartitionHeader,
@@ -115,6 +116,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Format::GameCube => {
                     println!("OK: GameCube FST hierarchy, file byte ranges and disc header bounds checked (no executable or content hash authentication)");
                 }
+                Format::WiiUWux => {
+                    let mut input = File::open(file)?;
+                    let info = inspect_wux(&mut input, report.bytes)?;
+                    let checked = validate_wux_index(&mut input, &info)?;
+                    println!(
+                        "OK: WUX index references {} unique stored sectors across {} logical sectors (no partition decryption or content hash validation)",
+                        checked.referenced_stored_sectors, checked.logical_sector_count
+                    );
+                }
                 _ => {
                     require_sections(&report)?;
                     println!(
@@ -123,6 +133,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "wiiu" && action == "wux-check" => {
+            run_wux_check(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "wiiu" && action == "wux-check" && flag == "--json" =>
+        {
+            run_wux_check(file, true)?;
         }
         [platform, action, file] if platform == "snes" && action == "header" => {
             run_snes_header(file, false)?;
@@ -424,6 +442,7 @@ Usage:
   ninforge list <file> [--json]            List Switch, DS or GameCube files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge snes header <file> [--json]      Report LoROM/HiROM candidate headers
+  ninforge wiiu wux-check <file> [--json]  Validate WUX stored-sector index references
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
   ninforge 3ds cia-ticket <file> [--json]  Compare CIA ticket and TMD title IDs
   ninforge 3ds cia-audit <file> [--json]  Compare CIA bitmap and TMD content claims
@@ -503,6 +522,30 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
 /// contents have not been validated and are never exposed to extraction.
 /// Strict opt-in validation of the plaintext ticket-adjacent offsets only.
 /// Does not read or authenticate TMD/certificate bytes, H3 hashes, or game data.
+fn run_wux_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open(path)?;
+    let bytes = input.metadata()?.len();
+    let info = inspect_wux(&mut input, bytes)?;
+    let checked = validate_wux_index(&mut input, &info)?;
+    if json {
+        println!(
+            "{{\"format\":\"wiiu_wux_index\",\"logical_sector_count\":{},\"stored_sector_count\":{},\"referenced_stored_sectors\":{},\"duplicate_references\":{},\"index_table_verified\":true,\"content_hashes_verified\":false}}",
+            checked.logical_sector_count,
+            checked.stored_sector_count,
+            checked.referenced_stored_sectors,
+            checked.duplicate_references,
+        );
+    } else {
+        println!("Wii U WUX index: {} logical sectors; {} stored; {} referenced uniquely; {} repeated references (no content hashes or decryption verified)",
+            checked.logical_sector_count,
+            checked.stored_sector_count,
+            checked.referenced_stored_sectors,
+            checked.duplicate_references
+        );
+    }
+    Ok(())
+}
+
 fn run_wii_partition_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let report = inspect(&mut file)?;

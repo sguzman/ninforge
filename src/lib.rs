@@ -28,6 +28,7 @@ pub mod saves;
 pub mod snes;
 pub mod title_inventory;
 pub mod wii;
+pub mod wiiu;
 
 use std::collections::HashSet;
 use std::fmt;
@@ -52,6 +53,7 @@ pub enum Format {
     NintendoDs,
     Wii,
     WiiWbfs,
+    WiiUWux,
     GameCube,
     GameBoyAdvance,
     GameBoy,
@@ -77,6 +79,7 @@ impl Format {
             Self::NintendoDs => "Nintendo DS",
             Self::Wii => "Wii disc",
             Self::WiiWbfs => "Wii WBFS",
+            Self::WiiUWux => "Wii U WUX",
             Self::GameCube => "GameCube disc",
             Self::GameBoyAdvance => "Game Boy Advance",
             Self::GameBoy => "Game Boy",
@@ -99,6 +102,7 @@ impl Format {
             Self::Nintendo3dsCartridge | Self::Nintendo3dsNcch | Self::Nintendo3dsCia => "3ds",
             Self::NintendoDs => "ds",
             Self::Wii | Self::WiiWbfs => "wii",
+            Self::WiiUWux => "wiiu",
             Self::GameCube => "gamecube",
             Self::GameBoyAdvance => "gba",
             Self::GameBoy | Self::GameBoyColor => "gb",
@@ -146,7 +150,19 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         entries: Vec::new(),
     };
 
-    if head.starts_with(b"WBFS") {
+    if head.starts_with(b"WUX0") {
+        let info = wiiu::inspect_wux(input, bytes)?;
+        report.format = Format::WiiUWux;
+        report.add("logical_size_bytes", info.logical_size_bytes);
+        report.add("sector_size_bytes", info.sector_size_bytes);
+        report.add("logical_sector_count", info.logical_sector_count);
+        report.add("stored_sector_count", info.stored_sector_count);
+        report.add("index_table_offset", info.index_table_offset);
+        report.add("sector_array_offset", info.sector_array_offset);
+        report.add("flags", format!("0x{:08X}", info.flags));
+        report.add("index_table_verified", false);
+        report.add("content_hashes_verified", false);
+    } else if head.starts_with(b"WBFS") {
         report.format = Format::WiiWbfs;
         let header = wii::inspect_wbfs(input, bytes)?;
         report.add("host_sector_bytes", header.host_sector_bytes);
