@@ -13,7 +13,8 @@
 | 3DS cartridge | `NCSD` at 0x100 | Format/length only | No | No | No |
 | DS save wrappers | User-directed `nds save info`; DeSmuME footer, No$GBA header or original Action Replay DS `ARDS0001` wrapper | Known wrapper fields, compression flag, saved-size hints | No game-file listing | No | Bounds checks only; no save-content authenticity or chip identification |
 | DS | Expected logo CRC field + game code | Title, game/maker/unit/version codes, computed logo/header CRCs and optional multilingual banner title/CRC | Header sections, NitroFS files and banner.bin | One section, NitroFS file or banner | CRC-16 logo/header and optional banner checks; not signatures or full ROM hashing |
-| Wii disc | Disc magic + ID | Game ID | No | No | No |
+| Wii disc ISO | Disc magic + ID | Game ID, title, disc version, region, four partition group counts | Partition address/type metadata via `wii partitions` | No | Table/address bounds only, not partition decryption or hashes |
+| Wii WBFS | WBFS superblock signature | Host/virtual sector sizes, declared volume capacity and slot count | Disc-slot count only (block map not implemented) | No | Superblock plausibility only, not game data |
 | GameCube disc | Disc magic + ID | Game ID and title | No | No | No |
 | GBA | Fixed header byte, game code, complement checksum | Title, game/maker code, version | No | No | No |
 | GB/GBC | Cartridge logo (header checksum may be damaged) | Title, CGB/SGB flags, mapper, ROM/RAM capacity codes, licensee, header checksum | No | No | Explicit `verify` streams the ROM to check declared file size, header checksum and additive global checksum (not cryptographic) |
@@ -27,6 +28,7 @@
 - An NSP is a PFS0 outer container. `info` cannot report a reliably decrypted title ID, display name, build ID, or game version yet.
 - NES 2.0 is identified but extended sizes and mapper fields are **not** interpreted as iNES.
 - GBA header checksum remains a recognition heuristic; GB/GBC `info` instead reports header-checksum validity and `verify` checks full length and global additive checksum. An invalid global checksum is an explicit verification failure but not proof of tampering or non-authenticity.
+- Wii ISO partition table pointers use 4-byte words, not byte offsets. Table parsing caps counts, checks duplicate addresses and never treats a partition offset as a content length. WBFS parsing does not reconstruct or decrypt the filesystem.
 - XCI, NCA and 3DS signature detection may not recognize encrypted or differently laid out variants.
 - DS regions include header sections and NitroFS; DS header/logo and optional banner CRCs are checked when `verify` is requested.
 - `scan --json` outputs NDJSON and skips symlinks; malformed files cause a nonzero exit.
