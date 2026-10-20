@@ -98,49 +98,91 @@ pub(crate) fn metadata(head: &[u8], actual_bytes: u64) -> Vec<(String, String)> 
     };
     put(&mut fields, "cgb_support", cgb);
     put(&mut fields, "super_game_boy_support", head[0x146] == 0x03);
-    put(&mut fields, "cartridge_type", format!("0x{:02X}", head[0x147]));
-    put(&mut fields, "cartridge_type_name",
-        cartridge_type(head[0x147]).unwrap_or("unknown"));
-    put(&mut fields, "rom_size_code", format!("0x{:02X}", head[0x148]));
+    put(
+        &mut fields,
+        "cartridge_type",
+        format!("0x{:02X}", head[0x147]),
+    );
+    put(
+        &mut fields,
+        "cartridge_type_name",
+        cartridge_type(head[0x147]).unwrap_or("unknown"),
+    );
+    put(
+        &mut fields,
+        "rom_size_code",
+        format!("0x{:02X}", head[0x148]),
+    );
     if let Some(declared) = rom_size(head[0x148]) {
         put(&mut fields, "declared_rom_size_bytes", declared);
-        put(&mut fields, "declared_rom_size_matches_file", declared == actual_bytes);
+        put(
+            &mut fields,
+            "declared_rom_size_matches_file",
+            declared == actual_bytes,
+        );
         if (0x52..=0x54).contains(&head[0x148]) {
             put(&mut fields, "rom_size_code_basis", "historical_unofficial");
         }
     } else {
         put(&mut fields, "declared_rom_size_known", false);
     }
-    put(&mut fields, "ram_size_code", format!("0x{:02X}", head[0x149]));
+    put(
+        &mut fields,
+        "ram_size_code",
+        format!("0x{:02X}", head[0x149]),
+    );
     if let Some(bytes) = ram_size(head[0x149]) {
         put(&mut fields, "declared_external_ram_size_bytes", bytes);
     } else {
         put(&mut fields, "declared_external_ram_size_known", false);
     }
-    put(&mut fields, "destination",
+    put(
+        &mut fields,
+        "destination",
         match head[0x14a] {
             0 => "japan",
             1 => "non_japan",
             _ => "unknown",
-        });
-    put(&mut fields, "old_licensee_code", format!("0x{:02X}", head[0x14b]));
+        },
+    );
+    put(
+        &mut fields,
+        "old_licensee_code",
+        format!("0x{:02X}", head[0x14b]),
+    );
     if head[0x14b] == 0x33 {
         let new = &head[0x144..0x146];
         if new.iter().all(u8::is_ascii_alphanumeric) {
-            put(&mut fields, "new_licensee_code",
-                String::from_utf8_lossy(new).to_string());
+            put(
+                &mut fields,
+                "new_licensee_code",
+                String::from_utf8_lossy(new).to_string(),
+            );
         } else {
             put(&mut fields, "new_licensee_code", "unreadable");
         }
     }
     put(&mut fields, "cartridge_revision", head[0x14c]);
-    put(&mut fields, "header_checksum_stored",
-        format!("0x{:02X}", head[0x14d]));
-    put(&mut fields, "header_checksum_calculated",
-        format!("0x{:02X}", header_checksum(head)));
-    put(&mut fields, "header_checksum_valid", head[0x14d] == header_checksum(head));
-    put(&mut fields, "global_checksum_stored",
-        format!("0x{:04X}", u16::from_be_bytes([head[0x14e], head[0x14f]])));
+    put(
+        &mut fields,
+        "header_checksum_stored",
+        format!("0x{:02X}", head[0x14d]),
+    );
+    put(
+        &mut fields,
+        "header_checksum_calculated",
+        format!("0x{:02X}", header_checksum(head)),
+    );
+    put(
+        &mut fields,
+        "header_checksum_valid",
+        head[0x14d] == header_checksum(head),
+    );
+    put(
+        &mut fields,
+        "global_checksum_stored",
+        format!("0x{:04X}", u16::from_be_bytes([head[0x14e], head[0x14f]])),
+    );
     put(&mut fields, "global_checksum_not_checked", true);
     // MBC2 memory is built into its controller and is not external RAM.
     if matches!(head[0x147], 0x05 | 0x06) {
@@ -155,7 +197,9 @@ pub(crate) fn metadata(head: &[u8], actual_bytes: u64) -> Vec<(String, String)> 
 pub fn verify_game_boy<R: Read + Seek>(reader: &mut R) -> io::Result<u64> {
     let length = reader.seek(SeekFrom::End(0))?;
     if !(32 * 1024..=MAX_VERIFICATION_BYTES).contains(&length) {
-        return Err(invalid("Game Boy ROM size outside supported verification bounds"));
+        return Err(invalid(
+            "Game Boy ROM size outside supported verification bounds",
+        ));
     }
     reader.seek(SeekFrom::Start(0))?;
     let mut head = [0u8; HEADER_BYTES];
@@ -169,7 +213,9 @@ pub fn verify_game_boy<R: Read + Seek>(reader: &mut R) -> io::Result<u64> {
     let expected = rom_size(head[0x148])
         .ok_or_else(|| invalid("Game Boy ROM has unknown declared size code"))?;
     if expected != length {
-        return Err(invalid("Game Boy declared ROM size differs from actual file"));
+        return Err(invalid(
+            "Game Boy declared ROM size differs from actual file",
+        ));
     }
     let stored_global = u16::from_be_bytes([head[0x14e], head[0x14f]]);
     reader.seek(SeekFrom::Start(0))?;
@@ -210,7 +256,9 @@ mod tests {
         image[0x14b] = 0x33;
         image[0x144..0x146].copy_from_slice(b"01");
         image[0x14d] = header_checksum(&image);
-        let checksum = image.iter().enumerate()
+        let checksum = image
+            .iter()
+            .enumerate()
             .filter(|(i, _)| *i != 0x14e && *i != 0x14f)
             .fold(0u16, |sum, (_, byte)| sum.wrapping_add(u16::from(*byte)));
         image[0x14e..0x150].copy_from_slice(&checksum.to_be_bytes());
@@ -218,7 +266,10 @@ mod tests {
     }
 
     fn value<'a>(items: &'a [(String, String)], key: &str) -> Option<&'a str> {
-        items.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        items
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     #[test]
@@ -226,13 +277,22 @@ mod tests {
         let bytes = sample(1, 0x13, 0x80);
         let fields = metadata(&bytes, bytes.len() as u64);
         assert_eq!(value(&fields, "cgb_support"), Some("compatible"));
-        assert_eq!(value(&fields, "cartridge_type_name"), Some("mbc3_ram_battery"));
+        assert_eq!(
+            value(&fields, "cartridge_type_name"),
+            Some("mbc3_ram_battery")
+        );
         assert_eq!(value(&fields, "declared_rom_size_bytes"), Some("65536"));
-        assert_eq!(value(&fields, "declared_external_ram_size_bytes"), Some("32768"));
+        assert_eq!(
+            value(&fields, "declared_external_ram_size_bytes"),
+            Some("32768")
+        );
         assert_eq!(value(&fields, "new_licensee_code"), Some("01"));
         assert_eq!(value(&fields, "header_checksum_valid"), Some("true"));
         assert_eq!(value(&fields, "global_checksum_not_checked"), Some("true"));
-        assert_eq!(value(&fields, "declared_rom_size_matches_file"), Some("true"));
+        assert_eq!(
+            value(&fields, "declared_rom_size_matches_file"),
+            Some("true")
+        );
     }
 
     #[test]
@@ -246,14 +306,20 @@ mod tests {
         assert_eq!(cartridge_type(0x04), None);
         let rom = sample(0x52, 0x00, 0xc0);
         let fields = metadata(&rom, rom.len() as u64);
-        assert_eq!(value(&fields, "rom_size_code_basis"), Some("historical_unofficial"));
+        assert_eq!(
+            value(&fields, "rom_size_code_basis"),
+            Some("historical_unofficial")
+        );
         assert_eq!(value(&fields, "cgb_support"), Some("required"));
     }
 
     #[test]
     fn valid_full_rom_checksums_and_detects_corruption() {
         let bytes = sample(0, 0x00, 0x00);
-        assert_eq!(verify_game_boy(&mut Cursor::new(bytes.clone())).unwrap(), 32768);
+        assert_eq!(
+            verify_game_boy(&mut Cursor::new(bytes.clone())).unwrap(),
+            32768
+        );
         let mut modified = bytes.clone();
         modified[0x2000] ^= 1;
         let err = verify_game_boy(&mut Cursor::new(modified)).unwrap_err();
@@ -261,7 +327,9 @@ mod tests {
         let mut altered = bytes.clone();
         altered[0x14d] ^= 1;
         assert!(verify_game_boy(&mut Cursor::new(altered))
-            .unwrap_err().to_string().contains("header checksum"));
+            .unwrap_err()
+            .to_string()
+            .contains("header checksum"));
     }
 
     #[test]
@@ -270,12 +338,16 @@ mod tests {
         bytes[0x148] = 0x09;
         bytes[0x14d] = header_checksum(&bytes);
         assert!(verify_game_boy(&mut Cursor::new(bytes.clone()))
-            .unwrap_err().to_string().contains("unknown declared size"));
+            .unwrap_err()
+            .to_string()
+            .contains("unknown declared size"));
         bytes[0x148] = 0x00;
         bytes[0x14d] = header_checksum(&bytes);
         bytes.extend([0u8; 16]);
         assert!(verify_game_boy(&mut Cursor::new(bytes))
-            .unwrap_err().to_string().contains("differs from actual"));
+            .unwrap_err()
+            .to_string()
+            .contains("differs from actual"));
     }
 
     #[test]
@@ -285,6 +357,9 @@ mod tests {
         let fields = metadata(&rom, rom.len() as u64);
         assert_eq!(value(&fields, "cgb_support"), Some("required"));
         assert_eq!(value(&fields, "mbc2_internal_512x4_ram"), Some("true"));
-        assert_eq!(value(&fields, "declared_external_ram_size_bytes"), Some("0"));
+        assert_eq!(
+            value(&fields, "declared_external_ram_size_bytes"),
+            Some("0")
+        );
     }
 }
