@@ -71,3 +71,7 @@ The optional `titles inventory <root> --packages` uses only files exactly named 
 ## PFS0 filename safety regression
 
 As in the HFS0 parser, PFS0 rejects slash/backslash path separators, the `.` and `..` entries and control characters before exposing an archive entry for listing or extraction. Synthetic tests cover malicious names and a legitimate dotted basename, without requiring a real ROM. All writes still require an explicit destination chosen by the caller.
+
+## Nintendo DS/DSi cartridge banners
+
+Version 1/2/3/0x0103 banners are constructed entirely from synthetic data, referenced through the DS ROM header offset 0x68, and read with a fixed maximum of 0x23c0 bytes. Unit tests cover little-endian version size, languages, UTF-16 titles, CRC-16/IBM reference vector, all applicable per-version CRC regions, intentionally corrupted CRC (reported rather than accepted), absent banner, invalid offset/version/truncation, malformed UTF-16 and control characters. CLI integration tests verify `info`/`list --json` metadata, `banner.bin` extraction without clobbering, and safe errors. Icons are not rendered and CRCs are not cryptographic signatures.

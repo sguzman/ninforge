@@ -2,7 +2,7 @@
 
 A **Rust-first, reusable CLI + library** for inspecting Nintendo game files, containers, and save backups across Nintendo console generations. Linux/EndeavourOS is the primary development target; the code should remain portable. No web app, daemon, or mandatory emulator dependency. Ninforge is a standalone Nintendo-format toolkit: it does not import, target, or control any separate application.
 
-**Current status: early format inspection and safe single-file save backups.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and HFS0 support bounded entry inspection and extraction. XCI reads the root partition and one nested HFS0 level. DS supports ROM header sections and NitroFS file-tree inspection and extraction. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
+**Current status: early format inspection and safe single-file save backups.** The working implementation detects signatures for Switch NSP/PFS0, XCI, readable NCA headers, 3DS NCSD, DS, Wii, GameCube, GBA, GB/GBC, N64, and NES. NSP/PFS0 and HFS0 support bounded entry inspection and extraction. XCI reads the root partition and one nested HFS0 level. DS supports ROM header sections, NitroFS files and localized cartridge banner titles, including read-only banner extraction and CRC-16 status. Both perform structural, not cryptographic, verification. Signature recognition **does not** mean full parsing or decryption support. Titles/IDs requiring encrypted control metadata or game-specific save schemas are not yet available.
 
 ## Build
 
@@ -41,6 +41,8 @@ ninforge package audit ./game.nsp ./metadata.cnmt --nacp ./control.nacp --main-n
 ninforge verify ./game.nsp
 ninforge extract ./game.nsp some-file.nca ./some-file.nca
 ninforge list ./game.nds
+ninforge info ./game.nds --json
+ninforge extract ./game.nds banner.bin ./banner.bin
 ninforge extract ./game.nds arm9.bin ./arm9.bin
 ninforge list ./game.nds --json
 ninforge extract ./game.nds nitrofs/sound/bgm.bin ./bgm.bin
@@ -49,6 +51,7 @@ ninforge saves scan /drive/saves --json
 ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
+- Nintendo DS `info` also reports header-referenced banner version, size, up to eight localized UTF-16 titles, and CRC-16 checks for supported DS/DSi versions (1, 2, 3, 0x0103). `list` exposes `banner.bin` only when present; `extract` can copy it to an explicit destination without overwriting. A CRC failure is reported as such; it is not proof of authenticity or a structural error by itself.
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
 - `nca info` accepts an explicitly supplied readable/decrypted NCA2 or NCA3 header (or full archive with plaintext header). Reports content type, program ID, distribution, rights ID when present and bounded filesystem section layout. Raw retail NCA headers remain encrypted; Ninforge does not decrypt them.
 - `titles inventory <root> --packages --json` optionally checks a **deliberately named** `package.nsp` or `package.xci` file in each immediate metadata bundle against that bundle's plaintext CNMT. Only one can be present; multiple candidate packages or package symlinks are errors. A missing designated package remains metadata-only, not a failure. `--hash` streams SHA-256 and `--headers` checks readable NCA headers; both require `--packages` and are never run by default. The JSON embeds the original per-content package audit, including absent/mismatched files and hash status. Even exact digest matching establishes only agreement with the **unverified supplied CNMT**, not publisher authentication or executable-to-title linkage. Do not copy full game archives into the public Git repository.
