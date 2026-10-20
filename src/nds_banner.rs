@@ -5,8 +5,7 @@ use crate::Entry;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 
 const TITLE_LANGUAGES: [&str; 8] = [
-    "japanese", "english", "french", "german",
-    "italian", "spanish", "chinese", "korean",
+    "japanese", "english", "french", "german", "italian", "spanish", "chinese", "korean",
 ];
 const MAX_BANNER: usize = 0x23c0;
 const CRC_REGIONS: [(usize, usize, usize); 4] = [
@@ -77,7 +76,10 @@ pub(crate) fn inspect_banner<R: Read + Seek>(
     let version = u16::from_le_bytes(version_bytes);
     let (size, languages, crc_regions) =
         version_size(version).ok_or_else(|| bad("unsupported DS banner version"))?;
-    if offset.checked_add(size as u64).is_none_or(|end| end > rom_size) {
+    if offset
+        .checked_add(size as u64)
+        .is_none_or(|end| end > rom_size)
+    {
         return Err(bad("DS banner extends beyond ROM"));
     }
     rom.seek(SeekFrom::Start(offset))?;
@@ -89,16 +91,20 @@ pub(crate) fn inspect_banner<R: Read + Seek>(
         ("banner_size".to_string(), size.to_string()),
     ];
     let mut all_match = true;
-    for (index, &(expected_offset, start, end)) in
-        CRC_REGIONS.iter().take(crc_regions).enumerate()
+    for (index, &(expected_offset, start, end)) in CRC_REGIONS.iter().take(crc_regions).enumerate()
     {
         let expected = u16::from_le_bytes(
-            bytes[expected_offset..expected_offset + 2].try_into().unwrap()
+            bytes[expected_offset..expected_offset + 2]
+                .try_into()
+                .unwrap(),
         );
         let actual = crc16(&bytes[start..end]);
         let matches = expected == actual;
         all_match &= matches;
-        metadata.push((format!("banner_crc{}_valid", index + 1), matches.to_string()));
+        metadata.push((
+            format!("banner_crc{}_valid", index + 1),
+            matches.to_string(),
+        ));
     }
     metadata.push(("banner_crc_all_valid".into(), all_match.to_string()));
 
@@ -121,7 +127,11 @@ pub(crate) fn inspect_banner<R: Read + Seek>(
         metadata.push((format!("banner_title_{language}"), title));
     }
     Ok(Some(Banner {
-        entry: Entry { name: "banner.bin".into(), offset, size: size as u64 },
+        entry: Entry {
+            name: "banner.bin".into(),
+            offset,
+            size: size as u64,
+        },
         metadata,
     }))
 }
@@ -139,18 +149,22 @@ mod tests {
         rom[offset..offset + 2].copy_from_slice(&version.to_le_bytes());
         for (i, code) in title.encode_utf16().enumerate() {
             let at = offset + 0x340 + i * 2;
-            rom[at..at+2].copy_from_slice(&code.to_le_bytes());
+            rom[at..at + 2].copy_from_slice(&code.to_le_bytes());
         }
         for &(field, start, end) in CRC_REGIONS.iter().take(ncrcs) {
-            let crc = crc16(&rom[offset+start..offset+end]);
-            rom[offset+field..offset+field+2].copy_from_slice(&crc.to_le_bytes());
+            let crc = crc16(&rom[offset + start..offset + end]);
+            rom[offset + field..offset + field + 2].copy_from_slice(&crc.to_le_bytes());
         }
         let header = rom[..0x200].to_vec();
         (rom, header)
     }
 
     fn field<'a>(banner: &'a Banner, key: &str) -> Option<&'a str> {
-        banner.metadata.iter().find(|(k, _)| k == key).map(|(_, value)| value.as_str())
+        banner
+            .metadata
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, value)| value.as_str())
     }
 
     #[test]
@@ -162,27 +176,35 @@ mod tests {
     fn reads_v1_utf16_titles_and_verified_crc() {
         let (rom, header) = fixture(1, "Pokémon\nDemo");
         let result = inspect_banner(&mut Cursor::new(&rom), &header, rom.len() as u64)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(result.entry.size, 0x840);
         assert_eq!(field(&result, "banner_version"), Some("0x0001"));
-        assert_eq!(field(&result, "banner_title_english"), Some("Pokémon\nDemo"));
+        assert_eq!(
+            field(&result, "banner_title_english"),
+            Some("Pokémon\nDemo")
+        );
         assert_eq!(field(&result, "banner_crc_all_valid"), Some("true"));
         assert_eq!(field(&result, "banner_title_korean"), None);
     }
 
     #[test]
     fn v2_v3_and_dsi_sizes_and_crc_regions() {
-        for (version, expected_size, crcs) in [
-            (2, 0x940, 2),
-            (3, 0xa40, 3),
-            (0x103, 0x23c0, 4),
-        ] {
+        for (version, expected_size, crcs) in [(2, 0x940, 2), (3, 0xa40, 3), (0x103, 0x23c0, 4)] {
             let (rom, header) = fixture(version, "Extended");
             let result = inspect_banner(&mut Cursor::new(&rom), &header, rom.len() as u64)
-                .unwrap().unwrap();
+                .unwrap()
+                .unwrap();
             assert_eq!(result.entry.size, expected_size);
             assert_eq!(field(&result, "banner_crc_all_valid"), Some("true"));
-            assert_eq!(result.metadata.iter().filter(|(k,_)| k.starts_with("banner_crc") && k.ends_with("_valid")).count(), crcs + 1);
+            assert_eq!(
+                result
+                    .metadata
+                    .iter()
+                    .filter(|(k, _)| k.starts_with("banner_crc") && k.ends_with("_valid"))
+                    .count(),
+                crcs + 1
+            );
         }
     }
 
@@ -191,16 +213,20 @@ mod tests {
         let (mut rom, header) = fixture(1, "Example");
         rom[0x300 + 0x340] ^= 1;
         let result = inspect_banner(&mut Cursor::new(&rom), &header, rom.len() as u64)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(field(&result, "banner_crc_all_valid"), Some("false"));
         assert!(field(&result, "banner_title_english").is_some());
     }
 
     #[test]
     fn no_banner_is_supported() {
-        let rom = vec![0;0x200];
-        assert!(inspect_banner(&mut Cursor::new(&rom), &rom, rom.len() as u64)
-            .unwrap().is_none());
+        let rom = vec![0; 0x200];
+        assert!(
+            inspect_banner(&mut Cursor::new(&rom), &rom, rom.len() as u64)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -213,16 +239,16 @@ mod tests {
         let mut bad = rom.clone();
         bad[0x300..0x302].copy_from_slice(&4u16.to_le_bytes());
         assert!(inspect_banner(&mut Cursor::new(&bad), &header, bad.len() as u64).is_err());
-        assert!(inspect_banner(&mut Cursor::new(&rom), &header, (rom.len()-1) as u64).is_err());
+        assert!(inspect_banner(&mut Cursor::new(&rom), &header, (rom.len() - 1) as u64).is_err());
     }
 
     #[test]
     fn rejects_malformed_utf16_and_disallowed_control_characters() {
         let (mut rom, header) = fixture(1, "Demo");
-        rom[0x300+0x340..0x300+0x342].copy_from_slice(&0xd800u16.to_le_bytes());
+        rom[0x300 + 0x340..0x300 + 0x342].copy_from_slice(&0xd800u16.to_le_bytes());
         assert!(inspect_banner(&mut Cursor::new(&rom), &header, rom.len() as u64).is_err());
         let (mut rom, header) = fixture(1, "Demo");
-        rom[0x300+0x340..0x300+0x342].copy_from_slice(&0x0007u16.to_le_bytes());
+        rom[0x300 + 0x340..0x300 + 0x342].copy_from_slice(&0x0007u16.to_le_bytes());
         assert!(inspect_banner(&mut Cursor::new(&rom), &header, rom.len() as u64).is_err());
     }
 }
