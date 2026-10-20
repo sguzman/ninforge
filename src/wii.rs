@@ -172,14 +172,20 @@ fn checked_partition_span(
     data_start: u64,
 ) -> io::Result<(u64, u64)> {
     if relative < 0x2c0 || size == 0 {
-        return Err(bad("Wii partition metadata span is empty or overlaps its header"));
+        return Err(bad(
+            "Wii partition metadata span is empty or overlaps its header",
+        ));
     }
-    let start = base.checked_add(relative)
+    let start = base
+        .checked_add(relative)
         .ok_or_else(|| bad("Wii partition metadata address overflow"))?;
-    let end = start.checked_add(size)
+    let end = start
+        .checked_add(size)
         .ok_or_else(|| bad("Wii partition metadata span overflow"))?;
     if end > data_start || end > file_bytes {
-        return Err(bad("Wii partition metadata span outside header area or ISO"));
+        return Err(bad(
+            "Wii partition metadata span outside header area or ISO",
+        ));
     }
     Ok((start, end))
 }
@@ -194,9 +200,12 @@ pub fn inspect_wii_partition_headers<R: Read + Seek>(
     let disc = inspect_wii_disc(input, file_bytes)?;
     let mut verified = Vec::with_capacity(disc.partitions.len());
     for part in &disc.partitions {
-        let metadata_start = part.offset_bytes.checked_add(0x2a4)
+        let metadata_start = part
+            .offset_bytes
+            .checked_add(0x2a4)
             .ok_or_else(|| bad("Wii partition field offset overflow"))?;
-        let metadata_end = metadata_start.checked_add(0x1c)
+        let metadata_end = metadata_start
+            .checked_add(0x1c)
             .ok_or_else(|| bad("Wii partition field end overflow"))?;
         if metadata_end > file_bytes {
             return Err(bad("Wii partition header fields outside ISO"));
@@ -213,33 +222,52 @@ pub fn inspect_wii_partition_headers<R: Read + Seek>(
         if data_relative < 0x2c0 || data_size == 0 {
             return Err(bad("Wii partition has invalid data offset or empty data"));
         }
-        let data_start = part.offset_bytes.checked_add(data_relative)
+        let data_start = part
+            .offset_bytes
+            .checked_add(data_relative)
             .ok_or_else(|| bad("Wii partition data offset overflow"))?;
-        let data_end = data_start.checked_add(data_size)
+        let data_end = data_start
+            .checked_add(data_size)
             .ok_or_else(|| bad("Wii partition data length overflow"))?;
         if data_end > file_bytes {
             return Err(bad("Wii partition data extent outside ISO"));
         }
         let tmd = checked_partition_span(
-            part.offset_bytes, tmd_relative, tmd_size, file_bytes, data_start
+            part.offset_bytes,
+            tmd_relative,
+            tmd_size,
+            file_bytes,
+            data_start,
         )?;
         let cert = if cert_size == 0 && cert_relative == 0 {
             None
         } else {
             Some(checked_partition_span(
-                part.offset_bytes, cert_relative, cert_size, file_bytes, data_start
+                part.offset_bytes,
+                cert_relative,
+                cert_size,
+                file_bytes,
+                data_start,
             )?)
         };
         let h3 = if h3_relative == 0 {
             None
         } else {
             Some(checked_partition_span(
-                part.offset_bytes, h3_relative, 0x18000, file_bytes, data_start
+                part.offset_bytes,
+                h3_relative,
+                0x18000,
+                file_bytes,
+                data_start,
             )?)
         };
         let mut ranges = vec![tmd];
-        if let Some(span) = cert { ranges.push(span); }
-        if let Some(span) = h3 { ranges.push(span); }
+        if let Some(span) = cert {
+            ranges.push(span);
+        }
+        if let Some(span) = h3 {
+            ranges.push(span);
+        }
         ranges.sort_by_key(|span| span.0);
         if ranges.windows(2).any(|window| window[0].1 > window[1].0) {
             return Err(bad("Wii partition metadata spans overlap"));
@@ -547,13 +575,13 @@ mod tests {
         // Layout fields follow the 0x2a4 ticket. Offsets and data size use
         // 32-bit big-endian words, TMD and cert lengths use plain bytes.
         for (field, value) in [
-            (0x2a4, 0x100u32), // TMD bytes
-            (0x2a8, 0x2c0 / 4), // TMD offset in words
-            (0x2ac, 0x80), // certificate bytes
-            (0x2b0, 0x3c0 / 4), // certificate relative offset
-            (0x2b4, 0x4000 / 4), // H3 relative offset
+            (0x2a4, 0x100u32),    // TMD bytes
+            (0x2a8, 0x2c0 / 4),   // TMD offset in words
+            (0x2ac, 0x80),        // certificate bytes
+            (0x2b0, 0x3c0 / 4),   // certificate relative offset
+            (0x2b4, 0x4000 / 4),  // H3 relative offset
             (0x2b8, 0x20000 / 4), // encrypted data relative offset
-            (0x2bc, 0x8000 / 4), // encrypted data length
+            (0x2bc, 0x8000 / 4),  // encrypted data length
         ] {
             raw[p + field..p + field + 4].copy_from_slice(&value.to_be_bytes());
         }
@@ -563,8 +591,8 @@ mod tests {
     #[test]
     fn wii_partition_header_reads_unencrypted_spans() {
         let raw = partition_header_fixture();
-        let result = inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap();
+        let result =
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64).unwrap();
         assert_eq!(result.len(), 1);
         let item = &result[0];
         assert_eq!(item.group, 0);
@@ -582,24 +610,44 @@ mod tests {
         let mut raw = partition_header_fixture();
         let p = 0x50000usize;
         raw[p + 0x2a8..p + 0x2ac].copy_from_slice(&0x80u32.to_be_bytes());
-        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap_err().to_string().contains("overlaps its header"));
+        assert!(
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("overlaps its header")
+        );
         raw = partition_header_fixture();
         raw[p + 0x2b8..p + 0x2bc].copy_from_slice(&(0x30000u32 / 4).to_be_bytes());
-        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap_err().to_string().contains("data extent outside ISO"));
+        assert!(
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("data extent outside ISO")
+        );
         raw = partition_header_fixture();
         raw[p + 0x2bc..p + 0x2c0].copy_from_slice(&0u32.to_be_bytes());
-        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap_err().to_string().contains("empty data"));
+        assert!(
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("empty data")
+        );
         raw = partition_header_fixture();
         raw[p + 0x2b4..p + 0x2b8].copy_from_slice(&(0x10000u32 / 4).to_be_bytes());
-        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap_err().to_string().contains("outside header area"));
+        assert!(
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("outside header area")
+        );
         raw = partition_header_fixture();
         raw[p + 0x2b0..p + 0x2b4].copy_from_slice(&(0x320u32 / 4).to_be_bytes());
-        assert!(inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap_err().to_string().contains("overlap"));
+        assert!(
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
+                .unwrap_err()
+                .to_string()
+                .contains("overlap")
+        );
     }
 
     #[test]
@@ -609,8 +657,8 @@ mod tests {
         for field in [0x2ac, 0x2b0, 0x2b4] {
             raw[p + field..p + field + 4].fill(0);
         }
-        let result = inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64)
-            .unwrap();
+        let result =
+            inspect_wii_partition_headers(&mut Cursor::new(&raw), raw.len() as u64).unwrap();
         assert_eq!(result[0].cert_offset_bytes, None);
         assert_eq!(result[0].h3_offset_bytes, None);
     }

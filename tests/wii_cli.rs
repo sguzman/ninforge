@@ -252,7 +252,6 @@ fn deep_check_rejects_truncated_records_and_wrong_input_format() {
     assert!(String::from_utf8_lossy(&check.stderr).contains("requires a WBFS container"));
 }
 
-
 fn iso_with_partition_headers() -> Vec<u8> {
     let mut image = iso();
     for partition in [0x50000usize, 0x70000usize] {
@@ -262,8 +261,7 @@ fn iso_with_partition_headers() -> Vec<u8> {
             (0x2b8, 0x10000 / 4),
             (0x2bc, 0x8000 / 4),
         ] {
-            image[partition + field..partition + field + 4]
-                .copy_from_slice(&value.to_be_bytes());
+            image[partition + field..partition + field + 4].copy_from_slice(&value.to_be_bytes());
         }
     }
     image
@@ -271,7 +269,9 @@ fn iso_with_partition_headers() -> Vec<u8> {
 fn wii_partition_check(file: &Fixture, json: bool) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ninforge"));
     command.args(["wii", "partition-check"]).arg(&file.file);
-    if json { command.arg("--json"); }
+    if json {
+        command.arg("--json");
+    }
     command.output().unwrap()
 }
 
@@ -280,7 +280,11 @@ fn partition_header_check_reports_bounded_tmd_and_data_extents() {
     let data = iso_with_partition_headers();
     let fixture = Fixture::new(&data);
     let output = wii_partition_check(&fixture, true);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json = String::from_utf8(output.stdout).unwrap();
     assert!(json.contains(r#""format":"wii_partition_header_check""#));
     assert!(json.contains(r#""partition_count":2"#));
@@ -296,8 +300,7 @@ fn partition_header_check_reports_bounded_tmd_and_data_extents() {
 #[test]
 fn damaged_partition_extent_fails_deep_check_not_fast_info() {
     let mut data = iso_with_partition_headers();
-    data[0x70000 + 0x2bc..0x70000 + 0x2c0]
-        .copy_from_slice(&(0x100000u32 / 4).to_be_bytes());
+    data[0x70000 + 0x2bc..0x70000 + 0x2c0].copy_from_slice(&(0x100000u32 / 4).to_be_bytes());
     let fixture = Fixture::new(&data);
     assert!(fixture.run(&["info"]).status.success());
     let checked = wii_partition_check(&fixture, true);
