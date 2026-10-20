@@ -482,7 +482,7 @@ fn run_ncsd_partitions(path: &str, json: bool) -> Result<(), Box<dyn std::error:
     if report.format != Format::Nintendo3dsCartridge {
         return Err("3ds partitions requires an NCSD/CCI image".into());
     }
-    use std::io::Read as _;
+    use std::io::{Read as _, Seek as _};
     let mut head = [0u8; 0x200];
     file.rewind()?;
     file.read_exact(&mut head)?;
