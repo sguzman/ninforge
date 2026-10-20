@@ -46,7 +46,7 @@ Implemented: `ninforge titles inventory <root> --json` and explicit `--packages 
 
 ## Nintendo DS save wrapper inspection
 
-Implemented: `nds save info <file> [--json]` as a standalone, bounded, read-only signature parser for DeSmuME's documented 40-byte DSV footer and No$GBA's SRAM backup header. It reports size and wrapper fields without treating a raw `.sav` or any common byte length as evidence of a particular game, backup-chip model, or valid DS payload. No decompression or save editing is performed. Save ownership and emulator interoperability require game-specific evidence; neither is inferred from a filename.
+Implemented: `nds save info <file> [--json]` as a standalone, bounded, read-only signature parser for DeSmuME's documented 40-byte DSV footer, No$GBA's SRAM backup header, and the original Action Replay DS `ARDS0001` 500-byte header. It reports size and wrapper fields without treating a raw `.sav` or any common byte length as evidence of a particular game, backup-chip model, or valid DS payload. No decompression or save editing is performed. Save ownership and emulator interoperability require game-specific evidence; neither is inferred from a filename.
 
 ## Save inventory MVP
 
