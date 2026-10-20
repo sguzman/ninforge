@@ -60,13 +60,16 @@ fn ascii_field(bytes: &[u8]) -> (String, bool) {
         None => &bytes[..0],
     };
     let valid = trimmed.iter().all(|c| *c == b' ' || c.is_ascii_graphic());
-    let display = trimmed.iter().map(|&c| {
-        if c.is_ascii_graphic() || c == b' ' {
-            char::from(c)
-        } else {
-            '?'
-        }
-    }).collect::<String>();
+    let display = trimmed
+        .iter()
+        .map(|&c| {
+            if c.is_ascii_graphic() || c == b' ' {
+                char::from(c)
+            } else {
+                '?'
+            }
+        })
+        .collect::<String>();
     (display, valid)
 }
 
@@ -121,26 +124,44 @@ impl N64Header {
         let mut fields = vec![
             ("byte_order".into(), self.byte_order.label().into()),
             ("title".into(), self.title.clone()),
-            ("title_ascii_valid".into(), self.title_ascii_valid.to_string()),
+            (
+                "title_ascii_valid".into(),
+                self.title_ascii_valid.to_string(),
+            ),
             ("game_code".into(), self.game_code.clone()),
-            ("game_code_ascii_valid".into(), self.game_code_ascii_valid.to_string()),
+            (
+                "game_code_ascii_valid".into(),
+                self.game_code_ascii_valid.to_string(),
+            ),
             ("entry_point".into(), format!("0x{:08X}", self.entry_point)),
             ("clock_rate".into(), format!("0x{:08X}", self.clock_rate)),
-            ("sdk_revision".into(), format!("0x{:08X}", self.sdk_revision)),
+            (
+                "sdk_revision".into(),
+                format!("0x{:08X}", self.sdk_revision),
+            ),
             ("crc1_stored".into(), format!("0x{:08X}", self.crc1_stored)),
             ("crc2_stored".into(), format!("0x{:08X}", self.crc2_stored)),
             ("crc1_crc2_verified".into(), "false".into()),
             ("cic_identified".into(), "false".into()),
             ("rom_data_verified".into(), "false".into()),
             ("category_code".into(), format!("0x{:02X}", self.category)),
-            ("country_code".into(), format!("0x{:02X}", self.country_code)),
+            (
+                "country_code".into(),
+                format!("0x{:02X}", self.country_code),
+            ),
             ("rom_version".into(), self.version.to_string()),
         ];
         if self.category.is_ascii_graphic() {
-            fields.push(("category_character".into(), char::from(self.category).to_string()));
+            fields.push((
+                "category_character".into(),
+                char::from(self.category).to_string(),
+            ));
         }
         if self.country_code.is_ascii_graphic() {
-            fields.push(("country_character".into(), char::from(self.country_code).to_string()));
+            fields.push((
+                "country_character".into(),
+                char::from(self.country_code).to_string(),
+            ));
         }
         fields
     }
@@ -176,7 +197,11 @@ mod tests {
         assert_eq!(expected.game_code, "NABE");
         assert_eq!(expected.entry_point, 0x80000400);
         assert_eq!(expected.crc2_stored, 0x9abcdef0);
-        for order in [ByteOrder::Native, ByteOrder::Swap16, ByteOrder::LittleEndian32] {
+        for order in [
+            ByteOrder::Native,
+            ByteOrder::Swap16,
+            ByteOrder::LittleEndian32,
+        ] {
             let other = inspect_n64(&swapped(&canonical, order)).unwrap();
             assert_eq!(other.byte_order, order);
             assert_eq!(other.title, expected.title);

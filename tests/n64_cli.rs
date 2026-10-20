@@ -35,7 +35,10 @@ struct Fixture {
 }
 impl Fixture {
     fn new(data: &[u8]) -> Self {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let folder = std::env::temp_dir().join(format!(
             "ninforge-n64-cli-{}-{stamp}-{}",
             std::process::id(),
@@ -73,7 +76,11 @@ fn all_n64_byte_orders_produce_identical_semantic_metadata() {
         let transformed = reordered(&image, mask);
         let file = Fixture::new(&transformed);
         let result = file.run("info", true);
-        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
         let output = String::from_utf8(result.stdout).unwrap();
         assert!(output.contains(r#""format":"Nintendo 64""#));
         assert!(output.contains(&format!(r#""byte_order":"{order}""#)));
@@ -87,8 +94,14 @@ fn all_n64_byte_orders_produce_identical_semantic_metadata() {
         assert!(output.contains(r#""crc1_crc2_verified":"false""#));
         assert!(output.contains(r#""rom_data_verified":"false""#));
         let check = file.run("verify", false);
-        assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
-        assert!(String::from_utf8(check.stdout).unwrap().contains("NOT verified"));
+        assert!(
+            check.status.success(),
+            "{}",
+            String::from_utf8_lossy(&check.stderr)
+        );
+        assert!(String::from_utf8(check.stdout)
+            .unwrap()
+            .contains("NOT verified"));
         assert_eq!(fs::read(&file.file).unwrap(), transformed);
     }
 }
