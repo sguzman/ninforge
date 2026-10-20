@@ -2,6 +2,7 @@
 
 use ninforge::cia::{inspect_cia, CiaReport};
 use ninforge::cia_tmd::{inspect_cia_tmd, CiaTmdReport};
+use ninforge::cia_ticket::{inspect_cia_ticket, CiaTicketReport};
 use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
@@ -104,6 +105,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "3ds" && action == "cia-ticket" => {
+            run_cia_ticket(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "3ds" && action == "cia-ticket" && flag == "--json" => {
+            run_cia_ticket(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "cia-audit" => {
             run_cia_tmd_audit(file, false)?;
@@ -383,6 +391,7 @@ Usage:
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
+  ninforge 3ds cia-ticket <file> [--json]  Compare CIA ticket and TMD title IDs
   ninforge 3ds cia-audit <file> [--json]  Compare CIA bitmap and TMD content claims
   ninforge 3ds cia-sections <file> [--json]  Index CIA aligned sections, no decryption
   ninforge 3ds partitions <ncsd> [--json]  Inspect NCSD media-unit partition table
@@ -585,6 +594,38 @@ fn print_ncsd_crosscheck(report: &NcsdNcchReport, json: bool) {
 
 /// Audit only the relationship between CIA index bits and untrusted TMD
 /// claims. Optional contents and signatures are never assumed authentic.
+/// Read-only ticket/TMD metadata comparison. No encrypted titlekey bytes,
+/// decrypted data, or cryptographic signature checks leave this function.
+fn run_cia_ticket(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let report = inspect_cia_ticket(&mut file)?;
+    print_cia_ticket(&report, json);
+    Ok(())
+}
+
+fn print_cia_ticket(report: &CiaTicketReport, json: bool) {
+    if !json {
+        println!(
+            "CIA ticket title=0x{:016X}, TMD title=0x{:016X}, ID match={}",
+            report.ticket_title_id, report.tmd_title_id, report.title_id_matches
+        );
+        println!(
+            "Ticket version={}, TMD version={}, match={}",
+            report.ticket_title_version, report.tmd_title_version,
+            report.title_version_matches
+        );
+        println!("RSA/ECDSA signature status and titlekey decryption are unverified.");
+        return;
+    }
+    println!(
+        r#"{{"format":"cia_ticket_check","ticket_signature_type":{},"ticket_data_version":{},"ticket_title_id":"0x{:016X}","tmd_title_id":"0x{:016X}","title_id_matches":{},"ticket_title_version":{},"tmd_title_version":{},"title_version_matches":{},"ticket_signature_verified":false,"tmd_signature_verified":false,"titlekey_decrypted":false}}"#,
+        report.signature_type, report.ticket_data_version,
+        report.ticket_title_id, report.tmd_title_id, report.title_id_matches,
+        report.ticket_title_version, report.tmd_title_version,
+        report.title_version_matches
+    );
+}
+
 fn run_cia_tmd_audit(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
     let result = inspect_cia_tmd(&mut file)?;
