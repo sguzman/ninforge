@@ -442,6 +442,95 @@ mod tests {
         assert_eq!(report.file_bytes, 512);
     }
 
+    /// Use a 2 MiB WBFS allocation unit, four physical units, two metadata
+    /// records and *synthetic* Wii disc-header copies (no encrypted contents).
+    fn wbfs_mapped() -> Vec<u8> {
+        let wbfs_bytes = 1usize << 21;
+        let mut data = vec![0u8; wbfs_bytes * 4];
+        data[..4].copy_from_slice(b"WBFS");
+        data[4..8].copy_from_slice(&16384u32.to_be_bytes());
+        data[8] = 9; // 512-byte host sector
+        data[9] = 21; // 2 MiB WBFS sector
+        data[12] = 1; // first disc
+        data[13] = 1; // second disc
+        let first = 512;
+        let second = 512 + 9728;
+        for (slot, offset, block) in [(0, first, 1u16), (1, second, 2u16)] {
+            data[offset..offset+6].copy_from_slice(if slot == 0 {b"DEMO01"} else {b"DEMO02"});
+            data[offset+0x18..offset+0x1c]
+                .copy_from_slice(&[0x5d,0x1c,0x9e,0xa3]);
+            data[offset+0x100..offset+0x102].copy_from_slice(&block.to_be_bytes());
+        }
+        data
+    }
+
+    #[test]
+    fn deep_wbfs_maps_check_two_real_record_positions() {
+        let image = wbfs_mapped();
+        let report = validate_wbfs_maps(&mut Cursor::new(&image), image.len() as u64).unwrap();
+        assert_eq!(report.physical_block_count, 4);
+        assert_eq!(report.disc_record_size_bytes, 9728);
+        assert_eq!(report.logical_blocks_per_disc, 4482);
+        assert_eq!(report.checked_slots, 2);
+        assert_eq!(report.mapped_blocks_total, 2);
+        assert_eq!(report.discs[0].disc_id, "DEMO01");
+        assert_eq!(report.discs[1].disc_id, "DEMO02");
+        assert_eq!(report.discs[0].info_offset_bytes, 512);
+        assert_eq!(report.discs[1].info_offset_bytes, 10240);
+        assert!(report.block_references_within_file);
+    }
+
+    #[test]
+    fn deep_wbfs_refuses_truncated_or_invalid_slot_records() {
+        let image = wbfs_mapped();
+        let mut truncated = image.clone();
+        truncated.truncate(10240 + 100);
+        assert!(validate_wbfs_maps(&mut Cursor::new(&truncated), truncated.len() as u64)
+            .unwrap_err().to_string().contains("disc record truncated"));
+        let mut corrupted = image.clone();
+        corrupted[512 + 0x18] ^= 1;
+        assert!(validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
+            .unwrap_err().to_string().contains("disc magic"));
+        corrupted = image.clone();
+        corrupted[13] = 2; // original WBFS slot occupancy is 0 or 1
+        assert!(validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
+            .unwrap_err().to_string().contains("occupancy"));
+        corrupted = image;
+        corrupted[0x0c + 400] = 1; // beyond disc metadata capacity
+        assert!(validate_wbfs_maps(&mut Cursor::new(&corrupted), corrupted.len() as u64)
+            .unwrap_err().to_string().contains("metadata capacity"));
+    }
+
+    #[test]
+    fn deep_wbfs_rejects_out_of_bounds_and_reused_block_indices() {
+        let image = wbfs_mapped();
+        let mut invalid = image.clone();
+        invalid[512 + 0x100..512 + 0x102].copy_from_slice(&4u16.to_be_bytes());
+        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+            .unwrap_err().to_string().contains("volume capacity"));
+        invalid = image.clone();
+        invalid[512 + 0x102..512 + 0x104].copy_from_slice(&1u16.to_be_bytes());
+        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+            .unwrap_err().to_string().contains("duplicate physical"));
+        invalid = image.clone();
+        invalid[10240 + 0x100..10240 + 0x102].copy_from_slice(&1u16.to_be_bytes());
+        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+            .unwrap_err().to_string().contains("duplicate physical"));
+        invalid = image;
+        invalid.truncate(2 * (1 << 21) + 1024);
+        assert!(validate_wbfs_maps(&mut Cursor::new(&invalid), invalid.len() as u64)
+            .unwrap_err().to_string().contains("beyond supplied file"));
+    }
+
+    #[test]
+    fn deep_wbfs_zero_disc_header_can_be_checked_without_disc_reads() {
+        let mut raw = wbfs(9, 16384);
+        raw[12] = 0;
+        let report = validate_wbfs_maps(&mut Cursor::new(&raw), raw.len() as u64).unwrap();
+        assert_eq!(report.checked_slots, 0);
+        assert_eq!(report.mapped_blocks_total, 0);
+    }
+
     #[test]
     fn wbfs_rejects_bad_shift_short_sector_and_zero_capacity() {
         let mut raw = wbfs(9, 16384);
