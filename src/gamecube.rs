@@ -48,7 +48,7 @@ pub fn inspect_gamecube<R: Read + Seek>(
     let fst_offset = be32(&header[0x424..0x428]);
     let fst_size = be32(&header[0x428..0x42c]);
     let fst_max_size = be32(&header[0x42c..0x430]);
-    if fst_size < 12 || fst_size > MAX_FST_BYTES {
+    if !(12..=MAX_FST_BYTES).contains(&fst_size) {
         return Err(invalid(
             "GameCube FST size is invalid or exceeds safety limit",
         ));
