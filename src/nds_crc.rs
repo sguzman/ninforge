@@ -51,22 +51,7 @@ impl HeaderChecks {
         .collect()
     }
 
-    /// Structural CRC integrity only; does not verify provenance/signatures.
-    pub fn ensure_valid(self) -> io::Result<()> {
-        if !self.logo_valid() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Nintendo DS logo CRC-16 mismatch",
-            ));
-        }
-        if !self.header_valid() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Nintendo DS header CRC-16 mismatch",
-            ));
-        }
-        Ok(())
-    }
+
 }
 
 /// Logo bytes are at [0xC0, 0x15C); stored logo CRC at [0x15C, 0x15E).
@@ -114,7 +99,6 @@ mod tests {
         assert_eq!(checks.logo_stored, 0xcf56);
         assert!(checks.logo_valid());
         assert!(checks.header_valid());
-        checks.ensure_valid().unwrap();
         assert!(checks.metadata().contains(&(
             "nds_header_crc_valid".into(), "true".into()
         )));
@@ -129,7 +113,6 @@ mod tests {
         let checks = inspect_header(&header).unwrap();
         assert!(!checks.logo_valid());
         assert!(checks.header_valid());
-        assert!(checks.ensure_valid().unwrap_err().to_string().contains("logo"));
     }
 
     #[test]
@@ -139,7 +122,6 @@ mod tests {
         let checks = inspect_header(&header).unwrap();
         assert!(checks.logo_valid());
         assert!(!checks.header_valid());
-        assert!(checks.ensure_valid().unwrap_err().to_string().contains("header"));
     }
 
     #[test]
