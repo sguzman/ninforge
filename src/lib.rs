@@ -5,6 +5,7 @@
 
 pub mod cnmt;
 pub mod gb;
+pub mod gba;
 mod hfs0;
 pub mod metadata_dir;
 pub mod nacp;
@@ -196,6 +197,7 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         report.add("game_code", ascii_field(&head[0xac..0xb0]));
         report.add("maker_code", ascii_field(&head[0xb0..0xb2]));
         report.add("version", head[0xbc]);
+        report.metadata.extend(gba::metadata(&head));
     } else if is_nds(&head) {
         report.format = Format::NintendoDs;
         report.add("title", ascii_field(&head[0..12]));
@@ -383,17 +385,9 @@ fn disc_id_ok(head: &[u8]) -> bool {
     head[0..6].iter().all(|byte| byte.is_ascii_alphanumeric())
 }
 fn is_gba(head: &[u8]) -> bool {
-    if head.len() < 0xbe || head[0xb2] != 0x96 {
-        return false;
-    }
-    if !head[0xac..0xb0].iter().all(|b| b.is_ascii_alphanumeric()) {
-        return false;
-    }
-    let checksum = head[0xa0..0xbd]
-        .iter()
-        .fold(0u8, |sum, byte| sum.wrapping_sub(*byte))
-        .wrapping_sub(0x19);
-    checksum == head[0xbd]
+    // Recognition and checksum validation are separate: a damaged cartridge
+    // must remain inspectable instead of being silently treated as unknown.
+    gba::recognizable(head)
 }
 fn is_nds(head: &[u8]) -> bool {
     head.len() >= 0x160
@@ -589,7 +583,7 @@ mod tests {
 
     #[test]
     fn recognizes_synthetic_gba_header() {
-        let mut bytes = vec![0u8; 0xbe];
+        let mut bytes = vec![0u8; 0xc0];
         bytes[0xa0..0xa4].copy_from_slice(b"DEMO");
         bytes[0xac..0xb0].copy_from_slice(b"ABCD");
         bytes[0xb2] = 0x96;

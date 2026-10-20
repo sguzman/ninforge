@@ -23,7 +23,7 @@ fn add(metadata: &mut Vec<(String, String)>, key: &str, value: impl ToString) {
 /// Recognize a plausible GBA header even if its complement checksum fails.
 /// Detection intentionally does not claim that the logo bytes are authentic.
 pub(crate) fn recognizable(header: &[u8]) -> bool {
-    header.len() >= 0xbe
+    header.len() >= HEADER_BYTES
         && header[0xb2] == 0x96
         && header[0xac..0xb0].iter().all(u8::is_ascii_alphanumeric)
 }

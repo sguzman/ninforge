@@ -64,6 +64,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         report.format, bytes
                     );
                 }
+                Format::GameBoyAdvance => {
+                    ninforge::gba::verify_gba_header(&mut File::open(file)?)?;
+                    println!("OK: GBA fixed header, complement checksum and weak logo sum match (header-only; no full-ROM checksum, signature or logo byte authentication)");
+                }
                 Format::NintendoDs => {
                     require_sections(&report)?;
                     verify_ds_checks(&report)?;
