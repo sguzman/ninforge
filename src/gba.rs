@@ -33,9 +33,12 @@ pub fn complement_checksum(header: &[u8]) -> Option<u8> {
     if header.len() <= 0xbc {
         return None;
     }
-    Some(header[0xa0..=0xbc].iter()
-        .fold(0u8, |sum, byte| sum.wrapping_sub(*byte))
-        .wrapping_sub(0x19))
+    Some(
+        header[0xa0..=0xbc]
+            .iter()
+            .fold(0u8, |sum, byte| sum.wrapping_sub(*byte))
+            .wrapping_sub(0x19),
+    )
 }
 
 /// Only a weak sum used by some cartridge dump tools; a matching sum does
@@ -44,28 +47,52 @@ pub fn logo_weak_sum(header: &[u8]) -> Option<u16> {
     if header.len() < LOGO_END {
         return None;
     }
-    Some(header[LOGO_OFFSET..LOGO_END].iter()
-        .fold(0u16, |sum, byte| sum.wrapping_add(u16::from(*byte))))
+    Some(
+        header[LOGO_OFFSET..LOGO_END]
+            .iter()
+            .fold(0u16, |sum, byte| sum.wrapping_add(u16::from(*byte))),
+    )
 }
 
 pub(crate) fn metadata(header: &[u8]) -> Vec<(String, String)> {
     let mut result = Vec::new();
     add(&mut result, "fixed_header_byte_valid", header[0xb2] == 0x96);
     add(&mut result, "main_unit_code", header[0xb3]);
-    add(&mut result, "device_type", format!("0x{:02X}", header[0xb4]));
+    add(
+        &mut result,
+        "device_type",
+        format!("0x{:02X}", header[0xb4]),
+    );
     add(&mut result, "device_debug_flag", header[0xb4] & 0x80 != 0);
-    add(&mut result, "reserved_header_bytes_zero",
+    add(
+        &mut result,
+        "reserved_header_bytes_zero",
         header[0xb5..0xbc].iter().all(|value| *value == 0)
-            && header[0xbe..0xc0].iter().all(|value| *value == 0));
+            && header[0xbe..0xc0].iter().all(|value| *value == 0),
+    );
     let calculated = complement_checksum(header).expect("full GBA header");
-    add(&mut result, "header_checksum_stored",
-        format!("0x{:02X}", header[0xbd]));
-    add(&mut result, "header_checksum_calculated",
-        format!("0x{calculated:02X}"));
-    add(&mut result, "header_checksum_valid", calculated == header[0xbd]);
+    add(
+        &mut result,
+        "header_checksum_stored",
+        format!("0x{:02X}", header[0xbd]),
+    );
+    add(
+        &mut result,
+        "header_checksum_calculated",
+        format!("0x{calculated:02X}"),
+    );
+    add(
+        &mut result,
+        "header_checksum_valid",
+        calculated == header[0xbd],
+    );
     let weak = logo_weak_sum(header).expect("full GBA header");
     add(&mut result, "logo_weak_sum", format!("0x{weak:04X}"));
-    add(&mut result, "logo_weak_sum_matches_reference", weak == EXPECTED_LOGO_SUM);
+    add(
+        &mut result,
+        "logo_weak_sum_matches_reference",
+        weak == EXPECTED_LOGO_SUM,
+    );
     add(&mut result, "logo_bytes_authenticated", false);
     add(&mut result, "full_rom_checksum_available", false);
     add(&mut result, "declared_rom_size_available", false);
@@ -114,7 +141,9 @@ mod tests {
     }
 
     fn value<'a>(meta: &'a [(String, String)], name: &str) -> Option<&'a str> {
-        meta.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+        meta.iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
     }
 
     #[test]
@@ -124,7 +153,10 @@ mod tests {
         assert!(recognizable(&bytes));
         let meta = metadata(&bytes);
         assert_eq!(value(&meta, "header_checksum_valid"), Some("true"));
-        assert_eq!(value(&meta, "logo_weak_sum_matches_reference"), Some("true"));
+        assert_eq!(
+            value(&meta, "logo_weak_sum_matches_reference"),
+            Some("true")
+        );
         assert_eq!(value(&meta, "logo_bytes_authenticated"), Some("false"));
         assert_eq!(value(&meta, "declared_rom_size_available"), Some("false"));
         assert_eq!(value(&meta, "save_chip_inferred"), Some("false"));
@@ -136,9 +168,14 @@ mod tests {
         let mut bytes = sample();
         bytes[0xbd] ^= 1;
         assert!(recognizable(&bytes));
-        assert_eq!(value(&metadata(&bytes), "header_checksum_valid"), Some("false"));
-        assert!(verify_gba_header(&mut Cursor::new(bytes)).unwrap_err()
-            .to_string().contains("complement checksum"));
+        assert_eq!(
+            value(&metadata(&bytes), "header_checksum_valid"),
+            Some("false")
+        );
+        assert!(verify_gba_header(&mut Cursor::new(bytes))
+            .unwrap_err()
+            .to_string()
+            .contains("complement checksum"));
     }
 
     #[test]
@@ -146,9 +183,14 @@ mod tests {
         let mut bytes = sample();
         bytes[0x40] ^= 1;
         assert!(recognizable(&bytes));
-        assert_eq!(value(&metadata(&bytes), "logo_weak_sum_matches_reference"), Some("false"));
-        assert!(verify_gba_header(&mut Cursor::new(bytes)).unwrap_err()
-            .to_string().contains("weak additive"));
+        assert_eq!(
+            value(&metadata(&bytes), "logo_weak_sum_matches_reference"),
+            Some("false")
+        );
+        assert!(verify_gba_header(&mut Cursor::new(bytes))
+            .unwrap_err()
+            .to_string()
+            .contains("weak additive"));
     }
 
     #[test]

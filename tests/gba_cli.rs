@@ -11,7 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 fn complement(header: &[u8]) -> u8 {
-    header[0xa0..0xbd].iter()
+    header[0xa0..0xbd]
+        .iter()
         .fold(0u8, |sum, byte| sum.wrapping_sub(*byte))
         .wrapping_sub(0x19)
 }
@@ -34,11 +35,14 @@ struct Fixture {
 }
 impl Fixture {
     fn new(data: &[u8]) -> Self {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH)
-            .unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let root = std::env::temp_dir().join(format!(
             "ninforge-gba-header-{}-{stamp}-{}",
-            std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed),
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         fs::create_dir(&root).unwrap();
         let file = root.join("fictional.bin");
@@ -48,12 +52,16 @@ impl Fixture {
     fn run(&self, verb: &str, json: bool) -> Output {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_ninforge"));
         cmd.arg(verb).arg(&self.file);
-        if json { cmd.arg("--json"); }
+        if json {
+            cmd.arg("--json");
+        }
         cmd.output().unwrap()
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 
 #[test]
@@ -61,7 +69,11 @@ fn gba_info_and_verify_report_limited_header_checks() {
     let original = synthetic();
     let file = Fixture::new(&original);
     let info = file.run("info", true);
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let text = String::from_utf8(info.stdout).unwrap();
     assert!(text.contains(r#""format":"Game Boy Advance""#));
     assert!(text.contains(r#""header_checksum_valid":"true""#));
@@ -69,8 +81,14 @@ fn gba_info_and_verify_report_limited_header_checks() {
     assert!(text.contains(r#""logo_bytes_authenticated":"false""#));
     assert!(text.contains(r#""declared_rom_size_available":"false""#));
     let checked = file.run("verify", false);
-    assert!(checked.status.success(), "{}", String::from_utf8_lossy(&checked.stderr));
-    assert!(String::from_utf8(checked.stdout).unwrap().contains("header-only"));
+    assert!(
+        checked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    assert!(String::from_utf8(checked.stdout)
+        .unwrap()
+        .contains("header-only"));
     assert_eq!(fs::read(&file.file).unwrap(), original);
 }
 
@@ -80,7 +98,11 @@ fn gba_damaged_complement_remains_inspectable_but_verify_fails() {
     raw[0xbc] ^= 1;
     let file = Fixture::new(&raw);
     let info = file.run("info", true);
-    assert!(info.status.success(), "{}", String::from_utf8_lossy(&info.stderr));
+    assert!(
+        info.status.success(),
+        "{}",
+        String::from_utf8_lossy(&info.stderr)
+    );
     let text = String::from_utf8(info.stdout).unwrap();
     assert!(text.contains(r#""header_checksum_valid":"false""#));
     let verify = file.run("verify", false);
@@ -119,6 +141,8 @@ fn truncated_gba_file_never_causes_parser_panic() {
     let file = Fixture::new(&raw[..0xbe]);
     let info = file.run("info", true);
     assert!(info.status.success());
-    assert!(String::from_utf8(info.stdout).unwrap().contains(r#""format":"Unknown""#));
+    assert!(String::from_utf8(info.stdout)
+        .unwrap()
+        .contains(r#""format":"Unknown""#));
     assert!(!file.run("verify", false).status.success());
 }
