@@ -1,6 +1,7 @@
 //! Standalone Ninforge binary. No external runtime service dependencies.
 
 use ninforge::cia::{inspect_cia, CiaReport};
+use ninforge::cia_tmd::{inspect_cia_tmd, CiaTmdReport};
 use ninforge::cnmt::inspect_cnmt;
 use ninforge::metadata_dir::discover_metadata_dir;
 use ninforge::nacp::inspect_nacp;
@@ -103,6 +104,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "3ds" && action == "cia-audit" => {
+            run_cia_tmd_audit(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "3ds" && action == "cia-audit" && flag == "--json" => {
+            run_cia_tmd_audit(file, true)?;
         }
         [platform, action, file] if platform == "3ds" && action == "crosscheck" => {
             run_ncsd_crosscheck(file, false)?;
@@ -374,6 +382,7 @@ Usage:
   ninforge list <file> [--json]            List NSP/HFS0/XCI entries or DS files
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
+  ninforge 3ds cia-audit <file> [--json]  Compare CIA bitmap and TMD content claims
   ninforge 3ds cia-sections <file> [--json]  Index CIA aligned sections, no decryption
   ninforge 3ds partitions <ncsd> [--json]  Inspect NCSD media-unit partition table
   ninforge 3ds ncch-regions <ncch> [--json]  Inspect NCCH content spans (not decrypt)
@@ -568,6 +577,55 @@ fn print_ncsd_crosscheck(report: &NcsdNcchReport, json: bool) {
             part.ncch_claimed_bytes, part.ncsd_partition_id, part.ncch_partition_id,
             matched, part.ncch_program_id, json_string(&part.ncch_product_code)
         ).expect("format NCSD-NCCH JSON");
+    }
+    out.push_str("]}");
+    println!("{out}");
+}
+
+/// Audit only the relationship between CIA index bits and untrusted TMD
+/// claims. Optional contents and signatures are never assumed authentic.
+fn run_cia_tmd_audit(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(path)?;
+    let result = inspect_cia_tmd(&mut file)?;
+    print_cia_tmd_audit(&result, json);
+    Ok(())
+}
+
+fn print_cia_tmd_audit(report: &CiaTmdReport, json: bool) {
+    if !json {
+        println!(
+            "CIA title=0x{:016X} version={} TMD records={} bitmap={} selected={} unmatched_bitmap={}",
+            report.title_id, report.title_version, report.tmd_record_count,
+            report.bitmap_bit_count, report.selected_record_count,
+            report.bitmap_entries_without_tmd_record
+        );
+        for record in &report.records {
+            println!(
+                "content_id=0x{:08X} index={} flags=0x{:04X} size={} selected={}",
+                record.content_id, record.content_index,
+                record.content_type, record.declared_size_bytes,
+                record.selected_by_cia_bitmap
+            );
+        }
+        println!("TMD claims only; signatures, hashes, and encrypted contents are not verified.");
+        return;
+    }
+    let mut out = format!(
+        r#"{{"format":"cia_tmd_audit","title_id":"0x{:016X}","title_version":{},"signature_type":{},"record_count":{},"bitmap_bit_count":{},"selected_record_count":{},"unselected_tmd_records":{},"bitmap_entries_without_tmd_record":{},"selected_content_declared_bytes":{},"cia_content_region_bytes":{},"cryptographic_integrity_verified":false,"records":["#,
+        report.title_id, report.title_version, report.signature_type,
+        report.tmd_record_count, report.bitmap_bit_count,
+        report.selected_record_count, report.unselected_tmd_records,
+        report.bitmap_entries_without_tmd_record,
+        report.selected_content_declared_bytes, report.cia_content_region_bytes
+    );
+    for (i, record) in report.records.iter().enumerate() {
+        if i > 0 { out.push(','); }
+        write!(
+            &mut out,
+            r#"{{"content_id":"0x{:08X}","index":{},"type_flags":{},"size_bytes":{},"selected":{}}}"#,
+            record.content_id, record.content_index, record.content_type,
+            record.declared_size_bytes, record.selected_by_cia_bitmap
+        ).expect("format CIA TMD JSON");
     }
     out.push_str("]}");
     println!("{out}");
