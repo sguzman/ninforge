@@ -21,7 +21,7 @@
 | GameCube disc | Disc magic + ID | Game ID and title | No | No | No |
 | GBA | Fixed 0x96 byte + plausible game code (checksum can be damaged) | Title, maker/game codes, version, unit/debug flags, complement and weak logo sum | No | No | Header-only complement plus weak logo sum, not exact bitmap/full-ROM validation |
 | GB/GBC | Cartridge logo (header checksum may be damaged) | Title, CGB/SGB flags, mapper, ROM/RAM capacity codes, licensee, header checksum | No | No | Explicit `verify` streams the ROM to check declared file size, header checksum and additive global checksum (not cryptographic) |
-| N64 | Three standard byte-order magics | Byte order | No | No | No |
+| N64 | Three standard byte-order magics | Byte-order-normalized title/game code/country, version, entry point, stored CRC1/CRC2 | No | No | Header recognition only; CIC-dependent CRCs and ROM data remain unverified |
 | NES | iNES signature | Header type, basic sizes, mapper (iNES only) | No | No | No |
 | CIA / SNES / Wii U / Switch 2 | Not yet implemented | No | No | No | No |
 
