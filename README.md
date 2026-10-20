@@ -48,12 +48,15 @@ ninforge extract ./game.nds arm9.bin ./arm9.bin
 ninforge list ./game.nds --json
 ninforge extract ./game.nds nitrofs/sound/bgm.bin ./bgm.bin
 ninforge scan /drive/games --json
+ninforge nds save info /drive/saves/example.dsv --json
+ninforge nds save info /drive/saves/example.sav
 ninforge saves scan /drive/saves --json
 ninforge saves backup /drive/saves/example.sav /drive/backups/example.sav
 ```
 
 - Nintendo DS `info` also reports separately calculated logo CRC-16 (`0xC0..0x15B`) and cartridge header CRC-16 (`0x00..0x15D`) and their stored values. `verify game.nds` requires both to match; if a banner is present, its applicable banner CRCs must match as well. An invalid checksum is shown in `info` rather than concealed, while `verify` exits unsuccessfully. These CRCs are corruption checks, not Nintendo signatures or proof of authentic software.
 - Nintendo DS `info` also reports header-referenced banner version, size, up to eight localized UTF-16 titles, and CRC-16 checks for supported DS/DSi versions (1, 2, 3, 0x0103). `list` exposes `banner.bin` only when present; `extract` can copy it to an explicit destination without overwriting. A CRC failure is reported as such; it is not proof of authenticity or a structural error by itself.
+- `nds save info <file> [--json]` recognizes DeSmuME DSV (40-byte footer and cookie) and No$GBA SRAM wrappers (signature, compression marker, and bounded size fields) regardless of filename extension. It reads only a small header/footer, never decompresses or changes a save, and does not guess the title, save chip or actual capacity from a raw file. Files without a supported signature are labeled `raw_or_unidentified`; familiar raw byte lengths are flagged only as non-authoritative hints. Game association is always unverified.
 - `info` reads bounded header, PFS0 directory and DS FNT/FAT structures; it does not read an entire game image into memory. It uses signatures and sanity checks rather than trusting filename extensions.
 - `nca info` accepts an explicitly supplied readable/decrypted NCA2 or NCA3 header (or full archive with plaintext header). Reports content type, program ID, distribution, rights ID when present and bounded filesystem section layout. Raw retail NCA headers remain encrypted; Ninforge does not decrypt them.
 - `titles inventory <root> --packages --json` optionally checks a **deliberately named** `package.nsp` or `package.xci` file in each immediate metadata bundle against that bundle's plaintext CNMT. Only one can be present; multiple candidate packages or package symlinks are errors. A missing designated package remains metadata-only, not a failure. `--hash` streams SHA-256 and `--headers` checks readable NCA headers; both require `--packages` and are never run by default. The JSON embeds the original per-content package audit, including absent/mismatched files and hash status. Even exact digest matching establishes only agreement with the **unverified supplied CNMT**, not publisher authentication or executable-to-title linkage. Do not copy full game archives into the public Git repository.

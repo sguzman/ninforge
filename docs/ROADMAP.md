@@ -9,7 +9,7 @@ Reference: [Nintendo IR, worldwide hardware sales, June 30 2026](https://www.nin
 | Phase | Platforms | Why | Initial goal |
 |---|---|---|---|
 | 1 | **Switch** | Broad usage and strong format-inspection value | NSP/PFS0 -> XCI/HFS0 (basic inspection done), NCA (plaintext header), CNMT and NACP readable metadata (done); build ID from NSO (done), encrypted NCA support still pending |
-| 2 | **DS** | Massive installed base; approachable unencrypted headers | NDS headers/regions, FNT/FAT filesystem, versioned banner metadata, and independent logo/header/banner CRC-16 checks (done); save identification pending |
+| 2 | **DS** | Massive installed base; approachable unencrypted headers | NDS headers/regions, FNT/FAT filesystem, versioned banner metadata and CRC-16 checks (done); DSV/No$GBA save wrapper recognition (done); game-specific chip detection and payload interpretation pending |
 | 3 | **GB/GBC and Wii** | Very popular and widely archived | cartridge header/catalog + Wii disc/WBFS inspection |
 | 4 | **GBA and 3DS** | Popular; 3DS adds encrypted containers | GBA headers, CIA/NCSD/NCCH metadata, opt-in external keys |
 | 5 | **NES/SNES and N64** | Legacy preservation, small files | mappers, SNES headers, N64 byte orders and checksums |
@@ -43,6 +43,10 @@ Implemented: conservative one-directory sidecar discovery (`package audit-dir`) 
 ## Version-aware Switch title inventory
 
 Implemented: `ninforge titles inventory <root> --json` and explicit `--packages [--hash] [--headers]` for non-recursive, user-provided plaintext CNMT bundle collections, with optional independently available NACP titles/display versions and user-designated NSO build IDs. Groups use explicit CNMT application relationships and preserve title IDs and versions independently. Colliding metadata for the same title/version/type is reported instead of silently selected. The reported highest version is only the highest **within the supplied local dataset**, not a network lookup or trusted publisher release value. An optional exact-named package.nsp/package.xci within a bundle can be audited by name/size, NCA header and/or SHA-256 against the bundle's CNMT. Ambiguous packages fail and missing packages retain metadata-only status; no automatic filename-based game-to-title guesses. Bundle co-location alone does not authenticate executable-to-title association. No game bytes, secrets, or remote title databases are required.
+
+## Nintendo DS save wrapper inspection
+
+Implemented: `nds save info <file> [--json]` as a standalone, bounded, read-only signature parser for DeSmuME's documented 40-byte DSV footer and No$GBA's SRAM backup header. It reports size and wrapper fields without treating a raw `.sav` or any common byte length as evidence of a particular game, backup-chip model, or valid DS payload. No decompression or save editing is performed. Save ownership and emulator interoperability require game-specific evidence; neither is inferred from a filename.
 
 ## Save inventory MVP
 
