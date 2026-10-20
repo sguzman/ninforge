@@ -191,3 +191,107 @@ pub fn inspect_gamecube<R: Read + Seek>(
         entries,
     })
 }
+
+/// A loadable section from the GameCube main DOL executable.
+#[derive(Debug, Clone)]
+pub struct DolSection {
+    pub kind: &'static str,
+    pub slot: usize,
+    pub disc_offset_bytes: u64,
+    pub size_bytes: u32,
+    pub load_address: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct MainDolReport {
+    pub dol_offset_bytes: u32,
+    pub entry_point: u32,
+    pub bss_address: u32,
+    pub bss_size_bytes: u32,
+    pub entrypoint_in_text: bool,
+    pub sections: Vec<DolSection>,
+}
+
+/// Validate the DOL's 18 optional section spans without reading code bytes.
+/// Memory load addresses and entrypoint placement are reported, not trusted.
+/// This does not authenticate executables or parse the PowerPC instructions.
+pub fn inspect_main_dol<R: Read + Seek>(
+    reader: &mut R,
+    file_bytes: u64,
+    disc: &GameCubeDisc,
+) -> io::Result<MainDolReport> {
+    let dol_start = u64::from(disc.dol_offset_bytes);
+    if dol_start == 0 {
+        return Err(invalid("GameCube disc has no main DOL offset"));
+    }
+    let header_end = dol_start
+        .checked_add(0x100)
+        .ok_or_else(|| invalid("GameCube DOL header offset overflow"))?;
+    if header_end > file_bytes {
+        return Err(invalid("GameCube main DOL header is truncated"));
+    }
+    let fst_start = u64::from(disc.fst_offset_bytes);
+    let fst_end = fst_start + u64::from(disc.fst_size_bytes);
+    if dol_start < fst_end && header_end > fst_start {
+        return Err(invalid("GameCube DOL header overlaps the FST"));
+    }
+    reader.seek(SeekFrom::Start(dol_start))?;
+    let mut header = [0u8; 0x100];
+    reader.read_exact(&mut header)?;
+
+    let mut sections = Vec::new();
+    let mut ranges = Vec::new();
+    for index in 0..18usize {
+        let relative = u64::from(be32(&header[index * 4..index * 4 + 4]));
+        let address = be32(&header[0x48 + index * 4..0x4c + index * 4]);
+        let size = be32(&header[0x90 + index * 4..0x94 + index * 4]);
+        if size == 0 && relative == 0 {
+            continue;
+        }
+        if size == 0 || relative < 0x100 {
+            return Err(invalid("GameCube DOL has an inconsistent section record"));
+        }
+        let start = dol_start
+            .checked_add(relative)
+            .ok_or_else(|| invalid("GameCube DOL section offset overflow"))?;
+        let end = start
+            .checked_add(u64::from(size))
+            .ok_or_else(|| invalid("GameCube DOL section end overflow"))?;
+        if end > file_bytes {
+            return Err(invalid("GameCube DOL section extends beyond the image"));
+        }
+        if start < fst_end && end > fst_start {
+            return Err(invalid("GameCube DOL section overlaps the FST"));
+        }
+        ranges.push((start, end));
+        sections.push(DolSection {
+            kind: if index < 7 { "text" } else { "data" },
+            slot: if index < 7 { index } else { index - 7 },
+            disc_offset_bytes: start,
+            size_bytes: size,
+            load_address: address,
+        });
+    }
+    if sections.is_empty() {
+        return Err(invalid("GameCube DOL has no loadable sections"));
+    }
+    ranges.sort_unstable();
+    if ranges.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+        return Err(invalid("GameCube DOL section byte ranges overlap"));
+    }
+    let entry_point = be32(&header[0xe0..0xe4]);
+    let entrypoint_in_text = sections.iter().any(|section| {
+        section.kind == "text"
+            && u64::from(section.load_address) <= u64::from(entry_point)
+            && u64::from(entry_point)
+                < u64::from(section.load_address) + u64::from(section.size_bytes)
+    });
+    Ok(MainDolReport {
+        dol_offset_bytes: disc.dol_offset_bytes,
+        entry_point,
+        bss_address: be32(&header[0xd8..0xdc]),
+        bss_size_bytes: be32(&header[0xdc..0xe0]),
+        entrypoint_in_text,
+        sections,
+    })
+}

@@ -1,6 +1,7 @@
 //! Standalone Ninforge binary. No external runtime service dependencies.
 
 use ninforge::cia::{inspect_cia, CiaReport};
+use ninforge::gamecube::{inspect_gamecube, inspect_main_dol};
 use ninforge::cia_ticket::{inspect_cia_ticket, CiaTicketReport};
 use ninforge::cia_tmd::{inspect_cia_tmd, CiaTmdReport};
 use ninforge::cnmt::inspect_cnmt;
@@ -133,6 +134,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+        [platform, action, file] if platform == "gamecube" && action == "dol-check" => {
+            run_gamecube_dol_check(file, false)?;
+        }
+        [platform, action, file, flag]
+            if platform == "gamecube" && action == "dol-check" && flag == "--json" =>
+        {
+            run_gamecube_dol_check(file, true)?;
         }
         [platform, action, file] if platform == "wiiu" && action == "wux-check" => {
             run_wux_check(file, false)?;
@@ -443,6 +452,7 @@ Usage:
   ninforge verify <file>                   Validate supported structural/checksum checks
   ninforge snes header <file> [--json]      Report LoROM/HiROM candidate headers
   ninforge wiiu wux-check <file> [--json]  Validate WUX stored-sector index references
+  ninforge gamecube dol-check <file> [--json]  Check GameCube main DOL section spans
   ninforge 3ds crosscheck <ncsd> [--json]  Compare NCSD and embedded NCCH header claims
   ninforge 3ds cia-ticket <file> [--json]  Compare CIA ticket and TMD title IDs
   ninforge 3ds cia-audit <file> [--json]  Compare CIA bitmap and TMD content claims
@@ -516,6 +526,63 @@ fn print_nds_save(report: &DsSaveReport, json: bool) {
     }
     output.push_str("}}");
     println!("{output}");
+}
+
+/// Inspect main DOL section offsets and storage extents, without reading code.
+fn run_gamecube_dol_check(path: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut input = File::open(path)?;
+    let info = inspect(&mut input)?;
+    if info.format != Format::GameCube {
+        return Err("gamecube dol-check requires a recognized GCM/ISO disc image".into());
+    }
+    let disc = inspect_gamecube(&mut input, info.bytes)?;
+    let dol = inspect_main_dol(&mut input, info.bytes, &disc)?;
+    if json {
+        let mut out = format!(
+            r#"{{"format":"gamecube_main_dol","dol_offset_bytes":{},"entry_point":"0x{:08X}","bss_address":"0x{:08X}","bss_size_bytes":{},"entrypoint_in_text":{},"section_count":{},"sections":["#,
+            dol.dol_offset_bytes,
+            dol.entry_point,
+            dol.bss_address,
+            dol.bss_size_bytes,
+            dol.entrypoint_in_text,
+            dol.sections.len()
+        );
+        for (index, section) in dol.sections.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+            write!(
+                &mut out,
+                r#"{{"kind":{},"slot":{},"disc_offset_bytes":{},"size_bytes":{},"load_address":"0x{:08X}"}}"#,
+                json_string(section.kind),
+                section.slot,
+                section.disc_offset_bytes,
+                section.size_bytes,
+                section.load_address
+            )?;
+        }
+        out.push_str(r#"],"content_hashes_verified":false}"#);
+        println!("{out}");
+    } else {
+        println!(
+            "GameCube main DOL: {} loadable sections; entry point 0x{:08X}; entrypoint inside declared text: {}",
+            dol.sections.len(),
+            dol.entry_point,
+            dol.entrypoint_in_text
+        );
+        for section in &dol.sections {
+            println!(
+                "{}{}: disc offset {}, {} bytes, load 0x{:08X}",
+                section.kind,
+                section.slot,
+                section.disc_offset_bytes,
+                section.size_bytes,
+                section.load_address
+            );
+        }
+        println!("DOL byte spans verified structurally; executable contents and signatures NOT verified");
+    }
+    Ok(())
 }
 
 /// Validate the sector table without reading or decrypting WUD data.
