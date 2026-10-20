@@ -16,7 +16,7 @@
 | Wii disc | Disc magic + ID | Game ID | No | No | No |
 | GameCube disc | Disc magic + ID | Game ID and title | No | No | No |
 | GBA | Fixed header byte, game code, complement checksum | Title, game/maker code, version | No | No | No |
-| GB/GBC | Nintendo logo and header checksum | Title, cartridge/size codes | No | No | No |
+| GB/GBC | Cartridge logo (header checksum may be damaged) | Title, CGB/SGB flags, mapper, ROM/RAM capacity codes, licensee, header checksum | No | No | Explicit `verify` streams the ROM to check declared file size, header checksum and additive global checksum (not cryptographic) |
 | N64 | Three standard byte-order magics | Byte order | No | No | No |
 | NES | iNES signature | Header type, basic sizes, mapper (iNES only) | No | No | No |
 | CIA / SNES / Wii U / Switch 2 | Not yet implemented | No | No | No | No |
@@ -26,8 +26,8 @@
 - File extensions are not used to claim format support; an unknown header remains Unknown even if named `.nsp`.
 - An NSP is a PFS0 outer container. `info` cannot report a reliably decrypted title ID, display name, build ID, or game version yet.
 - NES 2.0 is identified but extended sizes and mapper fields are **not** interpreted as iNES.
-- GBA/GB header checksum verification is only a recognition heuristic. `verify` is currently available for PFS0 and DS structures only.
+- GBA header checksum remains a recognition heuristic; GB/GBC `info` instead reports header-checksum validity and `verify` checks full length and global additive checksum. An invalid global checksum is an explicit verification failure but not proof of tampering or non-authenticity.
 - XCI, NCA and 3DS signature detection may not recognize encrypted or differently laid out variants.
-- DS regions are header sections, not the cartridge filesystem; header CRC is not checked yet.
+- DS regions include header sections and NitroFS; DS header/logo and optional banner CRCs are checked when `verify` is requested.
 - `scan --json` outputs NDJSON and skips symlinks; malformed files cause a nonzero exit.
 - All extraction happens with explicit output paths and streams data without buffering full game files.

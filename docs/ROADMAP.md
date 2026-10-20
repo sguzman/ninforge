@@ -10,7 +10,7 @@ Reference: [Nintendo IR, worldwide hardware sales, June 30 2026](https://www.nin
 |---|---|---|---|
 | 1 | **Switch** | Broad usage and strong format-inspection value | NSP/PFS0 -> XCI/HFS0 (basic inspection done), NCA (plaintext header), CNMT and NACP readable metadata (done); build ID from NSO (done), encrypted NCA support still pending |
 | 2 | **DS** | Massive installed base; approachable unencrypted headers | NDS headers/regions, FNT/FAT filesystem, versioned banner metadata and CRC-16 checks (done); DSV/No$GBA save wrapper recognition (done); game-specific chip detection and payload interpretation pending |
-| 3 | **GB/GBC and Wii** | Very popular and widely archived | cartridge header/catalog + Wii disc/WBFS inspection |
+| 3 | **GB/GBC and Wii** | Very popular and widely archived | GB/GBC mapper, size and checksum inspection (done); further GB cartridge validation and Wii disc/WBFS inspection pending |
 | 4 | **GBA and 3DS** | Popular; 3DS adds encrypted containers | GBA headers, CIA/NCSD/NCCH metadata, opt-in external keys |
 | 5 | **NES/SNES and N64** | Legacy preservation, small files | mappers, SNES headers, N64 byte orders and checksums |
 | 6 | **GameCube and Wii U** | Disc/container work; smaller installed bases | GCM/ISO, WUD/WUX, partition information |
