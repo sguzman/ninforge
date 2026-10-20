@@ -177,6 +177,14 @@ pub fn inspect<R: Read + Seek>(input: &mut R) -> io::Result<Report> {
         if let Some(value) = nes.submapper { report.add("submapper", value); }
         report.add("prg_rom_bytes", nes.prg_rom_bytes);
         report.add("chr_rom_bytes", nes.chr_rom_bytes);
+        // Retain the original KiB fields for existing metadata consumers.
+        // Exponent-encoded odd byte sizes cannot be represented in whole KiB.
+        if nes.prg_rom_bytes % 1024 == 0 {
+            report.add("prg_rom_kib", nes.prg_rom_bytes / 1024);
+        }
+        if nes.chr_rom_bytes % 1024 == 0 {
+            report.add("chr_rom_kib", nes.chr_rom_bytes / 1024);
+        }
         report.add("trainer_present", nes.trainer_present);
         report.add("mirroring", nes.mirroring);
         report.add("battery_flag", nes.battery_flag);
